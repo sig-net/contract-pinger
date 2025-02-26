@@ -1,0 +1,26 @@
+{
+  "name": "signet-express-examples",
+  "version": "1.0.0",
+  "description": "",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon -r dotenv/config src/index.js",
+    "build": "echo 'No build step needed for JavaScript'"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "packageManager": "pnpm@10.4.1+sha512.c753b6c3ad7afa13af388fa6d808035a008e30ea9993f58c6663e2bc5ff21679aa834db094987129aa4d488b86df57f7b634981b2f827cdcacc698cc0cfb88af",
+  "dependencies": {
+    "dotenv": "^16.3.1",
+    "express": "^4.21.2",
+    "near-api-js": "^2.1.4",
+    "signet.js": "file:../../near/signet.js/dist",
+    "viem": "^2.23.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
+  }
+}
