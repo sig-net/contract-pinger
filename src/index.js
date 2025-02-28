@@ -7,7 +7,8 @@ dotenv.config();
 
 // Import utilities
 const { useEnv } = require('./utils/useEnv');
-const { initNearContract } = require('./utils/nearContract');
+const { initNear } = require('./utils/initNear');
+const { initEvm } = require('./utils/initEvm');
 const { initChains } = require('./utils/chains');
 const { executeEvmTransaction } = require('./utils/evmTransactions');
 
@@ -21,10 +22,11 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Basic route that executes an EVM transaction
-app.get('/', async (req, res) => {
+app.get('/near', async (req, res) => {
   try {
-    const { chainSigContract } = await initNearContract();
+    const { chainSigContract } = await initNear({
+      contractAddress: req.body.contractAddress
+    });
     const chains = initChains(chainSigContract);
 
     // Execute EVM transaction
@@ -34,12 +36,30 @@ app.get('/', async (req, res) => {
       predecessorId: useEnv().nearAccount,
     });
 
-    res.json({ 
-      message: 'EVM transaction executed successfully', 
-      txHash 
-    });
+    res.json({ txHash });
   } catch (error) {
-    console.error('Error executing EVM transaction:', error);
+    res.status(500).json({ 
+      error: 'Failed to execute EVM transaction',
+      details: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+app.get('/evm', async (req, res) => {
+  try {
+    const { chainSigContract, walletClient } = initEvm({
+      contractAddress: req.body.contractAddress
+    });
+    const chains = initChains(chainSigContract);
+
+    const txHash = await executeEvmTransaction({
+      chainSigContract,
+      evm: chains.evm,
+      predecessorId: walletClient.account.address,
+    });
+
+    res.json({ txHash });
+  } catch (error) {
     res.status(500).json({ 
       error: 'Failed to execute EVM transaction',
       details: error instanceof Error ? error.message : String(error)

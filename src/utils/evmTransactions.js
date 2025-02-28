@@ -1,6 +1,3 @@
-/**
- * Sign and execute an EVM transaction
- */
 const executeEvmTransaction = async ({
   chainSigContract,
   evm,

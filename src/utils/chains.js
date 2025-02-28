@@ -1,10 +1,6 @@
-const signet = require('signet.js');
-const { EVM, Bitcoin, Cosmos, BTCRpcAdapters } = signet;
+const { EVM, Bitcoin, Cosmos, BTCRpcAdapters } = require('signet.js');
 const { useEnv } = require('./useEnv');
 
-/**
- * Initialize blockchain chains for server-side use
- */
 const initChains = (contract) => {
   const { sepoliaInfuraUrl } = useEnv();
 

@@ -1,11 +1,11 @@
 const nearAPI = require('near-api-js');
 const { connect, KeyPair, keyStores } = nearAPI;
 const { useEnv } = require('./useEnv');
+const { utils } = require('signet.js');
 
-/**
- * Initialize NEAR connection and account
- */
-const initNear = async () => {
+const initNear = async ({
+    contractAddress
+  }) => {
   const { nearAccount, nearNetworkId, nearPrivateKey } = useEnv();
 
   const keyStore = new keyStores.InMemoryKeyStore();
@@ -28,7 +28,14 @@ const initNear = async () => {
   const connection = await connect(config);
   const account = await connection.account(nearAccount);
 
-  return { connection, account, keyPair };
+  const chainSigContract = new utils.chains.near.ChainSignatureContract({
+    networkId: nearNetworkId,
+    contractId: contractAddress,
+    accountId: nearAccount,
+    keypair: keyPair,
+  });
+
+  return { connection, account, keyPair, chainSigContract };
 };
 
 module.exports = { initNear }; 
