@@ -13,14 +13,14 @@ const executeEvmTransaction = async ({
   const { balance, decimals } = await evm.getBalance(from);
   console.log({ from, balance, decimals });
 
-  const { transaction, mpcPayloads } = await evm.prepareTransactionForSigning({
+  const { transaction, hashesToSign } = await evm.prepareTransactionForSigning({
     from: from,
     to: "0x4174678c78fEaFd778c1ff319D5D326701449b25",
     value: 1n,
   });
 
   const rsvSignature = await chainSigContract.sign({
-    payload: mpcPayloads[0],
+    payload: hashesToSign[0],
     path,
     key_version: 0,
   });
@@ -31,7 +31,7 @@ const executeEvmTransaction = async ({
 
   const tx = evm.attachTransactionSignature({
     transaction,
-    mpcSignatures: [rsvSignature],
+    rsvSignatures: [rsvSignature],
   });
 
   const txHash = await evm.broadcastTx(tx);

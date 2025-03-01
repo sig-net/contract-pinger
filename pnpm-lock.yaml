@@ -18,8 +18,8 @@ importers:
         specifier: ^2.1.4
         version: 2.1.4
       signet.js:
-        specifier: 0.0.2-beta.5
-        version: 0.0.2-beta.5(typescript@5.7.3)
+        specifier: 0.0.2-beta.6
+        version: 0.0.2-beta.6(typescript@5.7.3)
       viem:
         specifier: ^2.23.5
         version: 2.23.5(typescript@5.7.3)
@@ -891,8 +891,8 @@ packages:
     resolution: {integrity: sha512-ZX99e6tRweoUXqR+VBrslhda51Nh5MTQwou5tnUDgbtyM0dBgmhEDtWGP/xbKn6hqfPRHujUNwz5fy/wbbhnpw==}
     engines: {node: '>= 0.4'}
 
-  signet.js@0.0.2-beta.5:
-    resolution: {integrity: sha512-SLEE+qelJbZFj20928ok0w7hJ+HmbPYe8RG4Ovc6QMncivavNaIuguHkT8uhfDvqgNfYbj7V50kV2CXff+Fypw==}
+  signet.js@0.0.2-beta.6:
+    resolution: {integrity: sha512-lncd+dEYZYYebULDXCM4EQ0Kqr1DUpBti3mKUVOuV0nncf0WjHNQPiNpruxml6AJECcJY0/RI86Hf8i1tGEE0Q==}
 
   simple-update-notifier@2.0.0:
     resolution: {integrity: sha512-a2B9Y0KlNXl9u/vsW6sTIu9vGEpfKu2wRV6l1H3XEas/0gUIzGzBoP/IouTcUQbm9JWZLH3COxyn03TYlFax6w==}
@@ -2211,7 +2211,7 @@ snapshots:
       side-channel-map: 1.0.1
       side-channel-weakmap: 1.0.2
 
-  signet.js@0.0.2-beta.5(typescript@5.7.3):
+  signet.js@0.0.2-beta.6(typescript@5.7.3):
     dependencies:
       '@cosmjs/amino': 0.32.4
       '@cosmjs/crypto': 0.32.4
