@@ -22,7 +22,7 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-app.get('/near', async (req, res) => {
+app.post('/near', async (req, res) => {
   try {
     const { chainSigContract } = await initNear({
       contractAddress: req.body.contractAddress
@@ -45,7 +45,7 @@ app.get('/near', async (req, res) => {
   }
 });
 
-app.get('/evm', async (req, res) => {
+app.post('/evm', async (req, res) => {
   try {
     const { chainSigContract, walletClient } = initEvm({
       contractAddress: req.body.contractAddress
