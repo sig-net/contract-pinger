@@ -29,15 +29,15 @@ const executeEvmTransaction = async ({
     throw new Error("Failed to sign transaction");
   }
 
-  const tx = evm.attachTransactionSignature({
-    transaction,
-    rsvSignatures: [rsvSignature],
-  });
+  // const tx = evm.attachTransactionSignature({
+  //   transaction,
+  //   rsvSignatures: [rsvSignature],
+  // });
 
-  const txHash = await evm.broadcastTx(tx);
+  // const txHash = await evm.broadcastTx(tx);
 
-  console.log({ txHash });
-  return txHash;
+  console.log({ rsvSignature });
+  return rsvSignature;
 };
 
 module.exports = { executeEvmTransaction }; 
