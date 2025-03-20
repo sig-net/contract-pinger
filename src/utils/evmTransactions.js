@@ -23,6 +23,16 @@ const executeEvmTransaction = async ({
     payload: hashesToSign[0],
     path,
     key_version: 0,
+  }, {
+    sign: {
+      algo: '',
+      dest: '',
+      params: '',
+    },
+    retry: {
+      delay: 10000,
+      retryCount: 12,
+    }
   });
 
   if (!rsvSignature) {
