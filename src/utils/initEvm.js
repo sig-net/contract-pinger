@@ -34,7 +34,7 @@ const initEvm = ({
     contractAddress,
   });
 
-  return { publicClient, walletClient, chainSigContract };
+  return { publicClient, chainSigContract };
 };
 
 module.exports = { initEvm };

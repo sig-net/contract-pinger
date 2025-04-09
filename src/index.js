@@ -47,15 +47,12 @@ app.post('/near', async (req, res) => {
 
 app.post('/evm', async (req, res) => {
   try {
-    const { chainSigContract, walletClient } = initEvm({
+    const { chainSigContract } = initEvm({
       contractAddress: req.body.contractAddress
     });
-    const chains = initChains(chainSigContract);
-
+    
     const txHash = await executeEvmTransaction({
-      chainSigContract,
-      evm: chains.evm,
-      predecessorId: walletClient.account.address,
+      chainSigContract,  
     });
 
     res.json({ txHash });
