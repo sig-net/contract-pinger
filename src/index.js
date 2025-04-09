@@ -27,13 +27,10 @@ app.post('/near', async (req, res) => {
     const { chainSigContract } = await initNear({
       contractAddress: req.body.contractAddress
     });
-    const chains = initChains(chainSigContract);
 
     // Execute EVM transaction
     const txHash = await executeEvmTransaction({
       chainSigContract,
-      evm: chains.evm,
-      predecessorId: useEnv().nearAccount,
     });
 
     res.json({ txHash });
