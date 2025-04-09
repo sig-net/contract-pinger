@@ -30,8 +30,8 @@ const executeEvmTransaction = async ({
       params: '',
     },
     retry: {
-      delay: 10000,
-      retryCount: 12,
+      delay: 60000,
+      retryCount: 1,
     }
   });
 
