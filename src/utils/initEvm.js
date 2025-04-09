@@ -13,7 +13,9 @@ const initEvm = ({
 
   const publicClient = createPublicClient({
     chain: sepolia,
-    transport: http(sepoliaInfuraUrl),
+    transport: http(sepoliaInfuraUrl, {
+      retryCount: 0
+    }),
   });
 
   const account = privateKeyToAccount(evmPrivateKey);
@@ -21,7 +23,9 @@ const initEvm = ({
   const walletClient = createWalletClient({
     account,
     chain: sepolia,
-    transport: http(sepoliaInfuraUrl),
+    transport: http(sepoliaInfuraUrl, {
+      retryCount: 0
+    }),
   });
 
   const chainSigContract = new utils.chains.evm.ChainSignatureContract({
