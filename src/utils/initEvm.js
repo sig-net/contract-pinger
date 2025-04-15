@@ -2,7 +2,8 @@ const { createPublicClient, createWalletClient, http } = require('viem');
 const { privateKeyToAccount } = require('viem/accounts');
 const { sepolia } = require('viem/chains');
 const { useEnv } = require('./useEnv');
-const { utils } = require('signet.js');
+const { contracts } = require('signet.js');
+
 /**
  * Initialize EVM clients for server-side use
  */
@@ -13,7 +14,9 @@ const initEvm = ({
 
   const publicClient = createPublicClient({
     chain: sepolia,
-    transport: http(sepoliaInfuraUrl),
+    transport: http(sepoliaInfuraUrl, {
+      retryCount: 0
+    }),
   });
 
   const account = privateKeyToAccount(evmPrivateKey);
@@ -21,10 +24,12 @@ const initEvm = ({
   const walletClient = createWalletClient({
     account,
     chain: sepolia,
-    transport: http(sepoliaInfuraUrl),
+    transport: http(sepoliaInfuraUrl, {
+      retryCount: 0
+    }),
   });
 
-  const chainSigContract = new utils.chains.evm.ChainSignatureContract({
+  const chainSigContract = new contracts.evm.ChainSignatureContract({
     publicClient,
     walletClient,
     contractAddress,
