@@ -78,10 +78,6 @@ app.post('/evm_no_check', async (req, res) => {
 });
 
 // TODO: replace with real calls
-app.post('/evm_no_check', async (req, res) => {
-  await new Promise(resolve => setTimeout(resolve, 500));
-  res.status(200).send('OK');
-});
 
 app.post('/solana', async (req, res) => {
   await new Promise(resolve => setTimeout(resolve, 2000));
