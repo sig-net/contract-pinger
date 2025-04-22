@@ -1,3 +1,5 @@
+const { waitForTransactionReceipt } = require("viem/actions");
+
 const createSignRequestAndWaitSignature = async ({
   chainSigContract,
 }) => {
@@ -34,6 +36,11 @@ const createSignRequest = async ({
       dest: '',
       params: '',
     },
+  });
+
+  const txReceipt = await waitForTransactionReceipt({
+    client: publicClient,
+    hash: signatureRequest.txHash,
   });
 
   console.log({ signatureRequest });
