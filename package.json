@@ -17,7 +17,7 @@
     "dotenv": "^16.3.1",
     "express": "^4.21.2",
     "near-api-js": "^2.1.4",
-    "signet.js": "^0.0.10",
+    "signet.js": "0.0.12-beta.1",
     "viem": "^2.23.5"
   },
   "devDependencies": {
