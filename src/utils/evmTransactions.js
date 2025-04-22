@@ -1,4 +1,4 @@
-const { waitForTransactionReceipt } = require("viem/actions");
+const { waitForTransactionReceipt, getTransactionReceipt } = require("viem/actions");
 
 const createSignRequestAndWaitSignature = async ({
   chainSigContract,
@@ -25,25 +25,35 @@ const createSignRequestAndWaitSignature = async ({
 
 const createSignRequest = async ({
   chainSigContract,
+  publicClient,
+  walletClient,
 }) => {
-  const signatureRequest = await chainSigContract.createSignatureRequest({
-    payload: new Uint8Array(Array(32).fill().map(() => Math.floor(Math.random() * 256))),
-    path: '',
-    key_version: 0,
-  }, {
-    sign: {
-      algo: '',
-      dest: '',
-      params: '',
+  const { maxFeePerGas, maxPriorityFeePerGas } = await publicClient.estimateFeesPerGas();
+  const nonce = await publicClient.getTransactionCount({
+    address: walletClient.account.address,
+    blockTag: 'latest',
+  });
+
+  const signatureRequest = await chainSigContract.createSignatureRequest(
+    {
+      payload: new Uint8Array(Array(32).fill().map(() => Math.floor(Math.random() * 256))),
+      path: '',
+      key_version: 0,
     },
-  });
+    {
+      sign: {
+        algo: '',
+        dest: '',
+        params: '',
+      },
+      transaction: {
+        maxFeePerGas: maxFeePerGas * 12n / 10n,
+        maxPriorityFeePerGas: maxPriorityFeePerGas * 12n / 10n,
+        nonce,
+      }
+    }
+  );
 
-  const txReceipt = await waitForTransactionReceipt({
-    client: publicClient,
-    hash: signatureRequest.txHash,
-  });
-
-  console.log({ signatureRequest });
   return signatureRequest;
 };
 

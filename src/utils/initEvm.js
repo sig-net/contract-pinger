@@ -11,7 +11,7 @@ const initEvm = ({
     contractAddress
 }) => {
   const { sepoliaInfuraUrl, evmPrivateKey } = useEnv();
-
+  
   const publicClient = createPublicClient({
     chain: sepolia,
     transport: http(sepoliaInfuraUrl),

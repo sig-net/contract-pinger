@@ -41,7 +41,7 @@ app.post('/near', async (req, res) => {
 
 app.post('/evm', async (req, res) => {
   try {
-    const { chainSigContract } = initEvm({
+    const { chainSigContract, publicClient } = initEvm({
       contractAddress: req.body.contractAddress
     });
 
@@ -60,16 +60,19 @@ app.post('/evm', async (req, res) => {
 
 app.post('/evm_no_check', async (req, res) => {
   try {
-    const { chainSigContract } = initEvm({
+    const { chainSigContract, publicClient, walletClient } = initEvm({
       contractAddress: req.body.contractAddress
     });
 
-    const txHash = await createSignRequest({
+    const signatureRequest = await createSignRequest({
       chainSigContract,
+      publicClient,
+      walletClient,
     });
 
-    res.json({ txHash });
+    res.json({ signatureRequest });
   } catch (error) {
+    console.log({ error });
     res.status(500).json({ 
       error: 'Failed to execute EVM transaction',
       details: error instanceof Error ? error.message : String(error)
