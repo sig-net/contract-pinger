@@ -40,6 +40,7 @@ app.post('/near', async (req, res) => {
 });
 
 app.post('/evm', async (req, res) => {
+  console.log('evm 1.0');
   try {
     const { chainSigContract, publicClient, walletClient } = initEvm({
       contractAddress: req.body.contractAddress
@@ -61,6 +62,7 @@ app.post('/evm', async (req, res) => {
 });
 
 app.post('/evm_no_check', async (req, res) => {
+  console.log('evm_no_check 1.0');
   try {
     const { chainSigContract, publicClient, walletClient } = initEvm({
       contractAddress: req.body.contractAddress
