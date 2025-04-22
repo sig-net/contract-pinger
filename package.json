@@ -14,10 +14,12 @@
   "type": "commonjs",
   "packageManager": "pnpm@10.4.1+sha512.c753b6c3ad7afa13af388fa6d808035a008e30ea9993f58c6663e2bc5ff21679aa834db094987129aa4d488b86df57f7b634981b2f827cdcacc698cc0cfb88af",
   "dependencies": {
+    "@coral-xyz/anchor": "^0.31.1",
+    "@solana/web3.js": "^1.98.0",
     "dotenv": "^16.3.1",
     "express": "^4.21.2",
     "near-api-js": "^2.1.4",
-    "signet.js": "0.0.12-beta.1",
+    "signet.js": "0.0.12-beta1",
     "viem": "^2.23.5"
   },
   "devDependencies": {

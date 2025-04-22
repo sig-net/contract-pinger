@@ -1,3 +1,23 @@
+
+const signArgs = [
+  {
+    payload: new Uint8Array(
+      Array(32)
+        .fill()
+        .map(() => Math.floor(Math.random() * 256))
+    ),
+    path: '',
+    key_version: 0,
+  },
+  {
+    sign: {
+      algo: '',
+      dest: '',
+      params: '',
+    },
+  },
+];
+
 const getCustomTransactionArgs = async ({
   publicClient,
   walletClient,
@@ -26,16 +46,8 @@ const createSignRequestAndWaitSignature = async ({
     walletClient,
   });
 
-  const rsvSignature = await chainSigContract.sign({
-    payload: new Uint8Array(Array(32).fill().map(() => Math.floor(Math.random() * 256))),
-    path: '',
-    key_version: 0,
-  }, {
-    sign: {
-      algo: '',
-      dest: '',
-      params: '',
-    },
+  const rsvSignature = await chainSigContract.sign(signArgs[0], {
+    ...signArgs[1],
     retry: {
       delay: 10000,
       retryCount: 12,
@@ -58,17 +70,9 @@ const createSignRequest = async ({
   });
 
   const signatureRequest = await chainSigContract.createSignatureRequest(
+    signArgs[0],
     {
-      payload: new Uint8Array(Array(32).fill().map(() => Math.floor(Math.random() * 256))),
-      path: '',
-      key_version: 0,
-    },
-    {
-      sign: {
-        algo: '',
-        dest: '',
-        params: '',
-      },
+      ...signArgs[1],
       transaction: transactionArgs
     }
   );
@@ -77,4 +81,8 @@ const createSignRequest = async ({
   return signatureRequest;
 };
 
-module.exports = { createSignRequestAndWaitSignature, createSignRequest }; 
+module.exports = {
+  createSignRequestAndWaitSignature,
+  createSignRequest,
+  signArgs,
+};
