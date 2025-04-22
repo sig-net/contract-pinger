@@ -16,7 +16,6 @@ const getCustomTransactionArgs = async ({
   }
 }
 
-
 const createSignRequestAndWaitSignature = async ({
   chainSigContract,
   publicClient,

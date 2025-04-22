@@ -1,4 +1,11 @@
 const useEnv = () => {
+  const getRotatingKey = () => {
+    const currentTime = new Date().getTime();
+    const keyIndex = (currentTime % 5) + 1
+    
+    return process.env[`EMV_PRIVATE_KEY_${keyIndex}`];
+  };
+  
   return {
     port: process.env.PORT || '3001',
     nodeEnv: process.env.NODE_ENV || 'development',
@@ -8,7 +15,7 @@ const useEnv = () => {
     nearPrivateKey: process.env.NEAR_PRIVATE_KEY || '',
     
     sepoliaInfuraUrl: process.env.SEPOLIA_INFURA_URL || '',
-    evmPrivateKey: process.env.EVM_PRIVATE_KEY || '',
+    evmPrivateKey: getRotatingKey(),
   };
 };
 
