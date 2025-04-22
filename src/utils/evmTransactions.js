@@ -1,8 +1,32 @@
-const { waitForTransactionReceipt, getTransactionReceipt } = require("viem/actions");
+const getCustomTransactionArgs = async ({
+  publicClient,
+  walletClient,
+}) => {
+  const { maxFeePerGas, maxPriorityFeePerGas } = await publicClient.estimateFeesPerGas();
+
+  const nonce = await publicClient.getTransactionCount({
+    address: walletClient.account.address,
+    blockTag: 'latest',
+  });
+
+  return {
+    maxFeePerGas: maxFeePerGas * 12n / 10n,
+    maxPriorityFeePerGas: maxPriorityFeePerGas * 12n / 10n,
+    nonce,
+  }
+}
+
 
 const createSignRequestAndWaitSignature = async ({
   chainSigContract,
+  publicClient,
+  walletClient,
 }) => {
+  const transactionArgs = await getCustomTransactionArgs({
+    publicClient,
+    walletClient,
+  });
+
   const rsvSignature = await chainSigContract.sign({
     payload: new Uint8Array(Array(32).fill().map(() => Math.floor(Math.random() * 256))),
     path: '',
@@ -16,7 +40,8 @@ const createSignRequestAndWaitSignature = async ({
     retry: {
       delay: 10000,
       retryCount: 12,
-    }
+    },
+    transaction: transactionArgs,
   });
 
   console.log({ rsvSignature });
@@ -28,10 +53,9 @@ const createSignRequest = async ({
   publicClient,
   walletClient,
 }) => {
-  const { maxFeePerGas, maxPriorityFeePerGas } = await publicClient.estimateFeesPerGas();
-  const nonce = await publicClient.getTransactionCount({
-    address: walletClient.account.address,
-    blockTag: 'latest',
+  const transactionArgs = await getCustomTransactionArgs({
+    publicClient,
+    walletClient,
   });
 
   const signatureRequest = await chainSigContract.createSignatureRequest(
@@ -46,14 +70,11 @@ const createSignRequest = async ({
         dest: '',
         params: '',
       },
-      transaction: {
-        maxFeePerGas: maxFeePerGas * 12n / 10n,
-        maxPriorityFeePerGas: maxPriorityFeePerGas * 12n / 10n,
-        nonce,
-      }
+      transaction: transactionArgs
     }
   );
 
+  console.log({ signatureRequest });
   return signatureRequest;
 };
 

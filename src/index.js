@@ -41,12 +41,14 @@ app.post('/near', async (req, res) => {
 
 app.post('/evm', async (req, res) => {
   try {
-    const { chainSigContract, publicClient } = initEvm({
+    const { chainSigContract, publicClient, walletClient } = initEvm({
       contractAddress: req.body.contractAddress
     });
 
     const signature = await createSignRequestAndWaitSignature({
       chainSigContract,
+      publicClient,
+      walletClient,
     });
 
     res.json({ signature });
