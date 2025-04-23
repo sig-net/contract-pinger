@@ -16,6 +16,11 @@ const useEnv = () => {
     
     sepoliaInfuraUrl: process.env.SEPOLIA_INFURA_URL || '',
     evmPrivateKey: getRotatingKey(),
+
+    solanaPrivateKey: process.env.SOLANA_PRIVATE_KEY || '',
+    solanaRpcUrl: process.env.SOLANA_RPC_URL || '',
+    chainSigAddressSolana: process.env.CHAIN_SIGNATURES_ADDRESS_SOLANA || '',
+    chainSigRootPublicKeySolana: process.env.CHAIN_SIGNATURES_ROOT_PUBLIC_KEY_SOLANA || '',
   };
 };
 

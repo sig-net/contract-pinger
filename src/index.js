@@ -1,13 +1,18 @@
 const express = require('express');
 const dotenv = require('dotenv');
-
+const { Transaction } = require('@solana/web3.js');
 // Load environment variables
 dotenv.config();
 
 // Import utilities
 const { initNear } = require('./utils/initNear');
 const { initEvm } = require('./utils/initEvm');
-const { createSignRequestAndWaitSignature, createSignRequest } = require('./utils/evmTransactions');
+const { initSolana } = require('./utils/initSolana');
+const {
+  createSignRequestAndWaitSignature,
+  createSignRequest,
+  signArgs,
+} = require('./utils/evmTransactions');
 
 // Environment variables with fallback to 3001
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
@@ -32,7 +37,7 @@ app.post('/near', async (req, res) => {
 
     res.json({ txHash });
   } catch (error) {
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to execute EVM transaction',
       details: error instanceof Error ? error.message : String(error)
     });
@@ -54,7 +59,7 @@ app.post('/evm', async (req, res) => {
 
     res.json({ signature });
   } catch (error) {
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to execute EVM transaction',
       details: error instanceof Error ? error.message : String(error)
     });
@@ -87,13 +92,57 @@ app.post('/evm_no_check', async (req, res) => {
 // TODO: replace with real calls
 
 app.post('/solana', async (req, res) => {
-  await new Promise(resolve => setTimeout(resolve, 2000));
-  res.status(200).send('OK');
+  try {
+    const { chainSigContract, requesterKeypair } = initSolana();
+
+    const signature = await chainSigContract.sign(signArgs[0], {
+      ...signArgs[1],
+      remainingAccounts: [
+        {
+          pubkey: requesterKeypair.publicKey,
+          isWritable: false,
+          isSigner: true,
+        },
+      ],
+      remainingSigners: [requesterKeypair],
+    });
+
+    res.json({ signature });
+  } catch (error) {
+    res.status(500).json({
+      error: 'Failed to execute Solana transaction',
+      details: error instanceof Error ? error.message : String(error),
+    });
+  }
 });
 
 app.post('/solana_no_check', async (req, res) => {
-  await new Promise(resolve => setTimeout(resolve, 500));
-  res.status(200).send('OK');
+  try {
+    const { chainSigContract, provider, requesterKeypair } = initSolana();
+
+    const instruction = await chainSigContract.getSignRequestInstruction(
+      signArgs[0],
+      {
+        ...signArgs[1],
+        remainingAccounts: [
+          {
+            pubkey: requesterKeypair.publicKey,
+            isWritable: false,
+            isSigner: true,
+          },
+        ],
+      }
+    );
+    const transaction = new Transaction().add(instruction);
+    const hash = await provider.sendAndConfirm(transaction, [requesterKeypair]);
+
+    res.json({ txHash: hash });
+  } catch (error) {
+    res.status(500).json({
+      error: 'Failed to execute Solana transaction',
+      details: error instanceof Error ? error.message : String(error),
+    });
+  }
 });
 
 // Error handling middleware
@@ -115,4 +164,4 @@ process.on('SIGTERM', () => {
   });
 });
 
-module.exports = app; 
+module.exports = app;
