@@ -95,18 +95,16 @@ app.post('/solana', async (req, res) => {
   try {
     const { chainSigContract, requesterKeypair } = initSolana();
 
-    const signature = await createSignRequestAndWaitSignature({
-      chainSigContract,
-      options: {
-        remainingAccounts: [
-          {
-            pubkey: requesterKeypair.publicKey,
-            isWritable: false,
-            isSigner: true,
-          },
-        ],
-        remainingSigners: [requesterKeypair],
-      },
+    const signature = await chainSigContract.sign(signArgs[0], {
+      ...signArgs[1],
+      remainingAccounts: [
+        {
+          pubkey: requesterKeypair.publicKey,
+          isWritable: false,
+          isSigner: true,
+        },
+      ],
+      remainingSigners: [requesterKeypair],
     });
 
     res.json({ signature });
