@@ -5,10 +5,10 @@
       "source.fixAll.eslint": "explicit",
       "source.fixAll": "explicit"
     },
-    "[typescript]": {
+    "[javascript]": {
       "editor.defaultFormatter": "esbenp.prettier-vscode"
     },
-    "[typescriptreact]": {
+    "[javascriptreact]": {
       "editor.defaultFormatter": "esbenp.prettier-vscode"
     },
     "prettier.requireConfig": true,

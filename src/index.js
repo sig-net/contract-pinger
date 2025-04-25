@@ -1,11 +1,8 @@
 const express = require('express');
 const dotenv = require('dotenv');
 const { Transaction } = require('@solana/web3.js');
-// Load environment variables
 dotenv.config();
 
-// Import utilities
-const { initNear } = require('./utils/initNear');
 const { initEvm } = require('./utils/initEvm');
 const { initSolana } = require('./utils/initSolana');
 const {
@@ -14,23 +11,35 @@ const {
   signArgs,
 } = require('./utils/evmTransactions');
 
-// Environment variables with fallback to 3001
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
+const API_SECRET = process.env.API_SECRET || 'default-secret-key';
 
-// Create Express application
 const app = express();
 
-// Middleware setup
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+const validateSecret = (req, res, next) => {
+  const requestSecret = req.headers['x-api-secret'] || req.body.secret;
+
+  if (!requestSecret || requestSecret !== API_SECRET) {
+    return res.status(401).json({
+      error: 'Unauthorized',
+      details: 'Invalid or missing API secret',
+    });
+  }
+
+  next();
+};
+
+app.use(validateSecret);
 
 app.post('/near', async (req, res) => {
   try {
     const { chainSigContract } = await initNear({
-      contractAddress: req.body.contractAddress
+      contractAddress: req.body.contractAddress,
     });
 
-    // Execute EVM transaction
     const txHash = await createSignRequestAndWaitSignature({
       chainSigContract,
     });
@@ -39,16 +48,16 @@ app.post('/near', async (req, res) => {
   } catch (error) {
     res.status(500).json({
       error: 'Failed to execute EVM transaction',
-      details: error instanceof Error ? error.message : String(error)
+      details: error instanceof Error ? error.message : String(error),
     });
   }
 });
 
 app.post('/evm', async (req, res) => {
-  console.log('evm 1.0');
+  console.log('evm 2.0');
   try {
     const { chainSigContract, publicClient, walletClient } = initEvm({
-      contractAddress: req.body.contractAddress
+      contractAddress: req.body.contractAddress,
     });
 
     const signature = await createSignRequestAndWaitSignature({
@@ -61,16 +70,16 @@ app.post('/evm', async (req, res) => {
   } catch (error) {
     res.status(500).json({
       error: 'Failed to execute EVM transaction',
-      details: error instanceof Error ? error.message : String(error)
+      details: error instanceof Error ? error.message : String(error),
     });
   }
 });
 
 app.post('/evm_no_check', async (req, res) => {
-  console.log('evm_no_check 1.0');
+  console.log('evm_no_check 2.0');
   try {
     const { chainSigContract, publicClient, walletClient } = initEvm({
-      contractAddress: req.body.contractAddress
+      contractAddress: req.body.contractAddress,
     });
 
     const signatureRequest = await createSignRequest({
@@ -82,9 +91,9 @@ app.post('/evm_no_check', async (req, res) => {
     res.json({ signatureRequest });
   } catch (error) {
     console.log({ error });
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to execute EVM transaction',
-      details: error instanceof Error ? error.message : String(error)
+      details: error instanceof Error ? error.message : String(error),
     });
   }
 });
@@ -145,18 +154,15 @@ app.post('/solana_no_check', async (req, res) => {
   }
 });
 
-// Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).send('Something broke!');
 });
 
-// Start the server
 const server = app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
 });
 
-// Handle server shutdown gracefully
 process.on('SIGTERM', () => {
   console.log('SIGTERM signal received: closing HTTP server');
   server.close(() => {
