@@ -34,6 +34,12 @@ const validateSecret = (req, res, next) => {
 
 app.use(validateSecret);
 
+app.post('/ping', async (req, res) => {
+  console.log('ping', req.body);
+  await new Promise(resolve => setTimeout(resolve, 500));
+  res.status(200).send('OK');
+});
+
 app.post('/near', async (req, res) => {
   try {
     const { chainSigContract } = await initNear({
