@@ -1,16 +1,17 @@
-const { initEthereum } = require("../utils/initEvm");
+const { initEthereum } = require('../utils/initEvm');
 const {
   createSignRequestAndWaitSignature,
   createSignRequest,
-} = require("../utils/evmTransactions");
+} = require('../utils/evmTransactions');
+const { constants } = require('signet.js');
 
 module.exports = {
-  chainName: "Ethereum",
+  chainName: 'Ethereum',
 
   contractAddresses: {
-    dev: "0x69C6b28Fdc74618817fa380De29a653060e14009",
-    testnet: "0x83458E8Bf8206131Fe5c05127007FA164c0948A2",
-    mainnet: "0xf8bdC0612361a1E49a8E01423d4C0cFc5dF4791A",
+    dev: constants.CONTRACT_ADDRESSES.ETHEREUM.TESTNET_DEV,
+    testnet: constants.CONTRACT_ADDRESSES.ETHEREUM.TESTNET,
+    mainnet: constants.CONTRACT_ADDRESSES.ETHEREUM.MAINNET,
   },
 
   async execute({ check_signature, environment }) {

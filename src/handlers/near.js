@@ -1,15 +1,16 @@
-const { initNearNew } = require("../utils/initNear");
+const { initNearNew } = require('../utils/initNear');
 const {
   createSignRequestAndWaitSignature,
-} = require("../utils/evmTransactions");
+} = require('../utils/evmTransactions');
+const { constants } = require('signet.js');
 
 module.exports = {
-  chainName: "NEAR",
+  chainName: 'NEAR',
 
   contractAddresses: {
-    dev: "dev.sig-net.testnet",
-    testnet: "v1.sig-net.testnet",
-    mainnet: "v1.sig-net.near",
+    dev: constants.CONTRACT_ADDRESSES.NEAR.TESTNET_DEV,
+    testnet: constants.CONTRACT_ADDRESSES.NEAR.TESTNET,
+    mainnet: constants.CONTRACT_ADDRESSES.NEAR.MAINNET,
   },
 
   async execute({ environment }) {

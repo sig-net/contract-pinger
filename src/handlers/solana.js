@@ -1,14 +1,15 @@
-const { Transaction } = require("@solana/web3.js");
-const { initSolanaNew } = require("../utils/initSolana");
-const { signArgs } = require("../utils/evmTransactions");
+const { Transaction } = require('@solana/web3.js');
+const { initSolanaNew } = require('../utils/initSolana');
+const { signArgs } = require('../utils/evmTransactions');
+const { constants } = require('signet.js');
 
 module.exports = {
-  chainName: "Solana",
+  chainName: 'Solana',
 
   contractAddresses: {
-    dev: "BtGZEs9ZJX3hAQuY5er8iyWrGsrPRZYupEtVSS129XKo",
-    testnet: "",
-    mainnet: "",
+    dev: constants.CONTRACT_ADDRESSES.SOLANA.TESTNET_DEV,
+    testnet: '',
+    mainnet: '',
   },
 
   async execute({ check_signature, environment }) {
