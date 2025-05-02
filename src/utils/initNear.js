@@ -1,7 +1,7 @@
-const nearAPI = require("near-api-js");
+const nearAPI = require('near-api-js');
 const { connect, KeyPair, keyStores } = nearAPI;
-const { useEnv } = require("./useEnv");
-const { utils } = require("signet.js");
+const { useEnv } = require('./useEnv');
+const { utils } = require('signet.js');
 
 const initNear = async ({ contractAddress }) => {
   const { nearAccount, nearNetworkId, nearPrivateKey } = useEnv();
@@ -14,13 +14,13 @@ const initNear = async ({ contractAddress }) => {
     networkId: nearNetworkId,
     keyStore,
     nodeUrl:
-      nearNetworkId === "mainnet"
-        ? "https://free.rpc.fastnear.com"
-        : "https://test.rpc.fastnear.com",
+      nearNetworkId === 'mainnet'
+        ? 'https://free.rpc.fastnear.com'
+        : 'https://test.rpc.fastnear.com',
     helperUrl:
-      nearNetworkId === "mainnet"
-        ? "https://helper.mainnet.near.org"
-        : "https://helper.testnet.near.org",
+      nearNetworkId === 'mainnet'
+        ? 'https://helper.mainnet.near.org'
+        : 'https://helper.testnet.near.org',
   };
 
   const connection = await connect(config);
@@ -45,10 +45,30 @@ const initNearNew = async ({ contractAddress, environment }) => {
   } = useEnv();
 
   const nearAccount =
-    environment === "mainnet" ? nearAccountIdMainnet : nearAccountIdTestnet;
+    environment === 'mainnet' ? nearAccountIdMainnet : nearAccountIdTestnet;
   const nearPrivateKey =
-    environment === "mainnet" ? nearPrivateKeyMainnet : nearPrivateKeyTestnet;
-  const nearNetworkId = environment === "mainnet" ? "mainnet" : "testnet";
+    environment === 'mainnet' ? nearPrivateKeyMainnet : nearPrivateKeyTestnet;
+  const nearNetworkId = environment === 'mainnet' ? 'mainnet' : 'testnet';
+
+  if (!nearAccount) {
+    throw new Error(
+      `NEAR account ID for ${environment} environment is missing. Please set the ${
+        environment === 'mainnet'
+          ? 'nearAccountIdMainnet'
+          : 'nearAccountIdTestnet'
+      } environment variable.`
+    );
+  }
+
+  if (!nearPrivateKey) {
+    throw new Error(
+      `NEAR private key for ${environment} environment is missing. Please set the ${
+        environment === 'mainnet'
+          ? 'nearPrivateKeyMainnet'
+          : 'nearPrivateKeyTestnet'
+      } environment variable.`
+    );
+  }
 
   const keyStore = new keyStores.InMemoryKeyStore();
   const keyPair = KeyPair.fromString(nearPrivateKey);
@@ -58,13 +78,13 @@ const initNearNew = async ({ contractAddress, environment }) => {
     networkId: nearNetworkId,
     keyStore,
     nodeUrl:
-      nearNetworkId === "mainnet"
-        ? "https://free.rpc.fastnear.com"
-        : "https://test.rpc.fastnear.com",
+      nearNetworkId === 'mainnet'
+        ? 'https://free.rpc.fastnear.com'
+        : 'https://test.rpc.fastnear.com',
     helperUrl:
-      nearNetworkId === "mainnet"
-        ? "https://helper.mainnet.near.org"
-        : "https://helper.testnet.near.org",
+      nearNetworkId === 'mainnet'
+        ? 'https://helper.mainnet.near.org'
+        : 'https://helper.testnet.near.org',
   };
 
   const connection = await connect(config);

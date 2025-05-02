@@ -1,8 +1,8 @@
-const { createPublicClient, createWalletClient, http } = require("viem");
-const { privateKeyToAccount } = require("viem/accounts");
-const { sepolia, mainnet } = require("viem/chains");
-const { useEnv } = require("./useEnv");
-const { contracts } = require("signet.js");
+const { createPublicClient, createWalletClient, http } = require('viem');
+const { privateKeyToAccount } = require('viem/accounts');
+const { sepolia, mainnet } = require('viem/chains');
+const { useEnv } = require('./useEnv');
+const { contracts } = require('signet.js');
 
 /**
  * Initialize EVM clients for server-side use
@@ -40,11 +40,29 @@ const initEthereum = ({ contractAddress, environment }) => {
     evmPrivateKeyMainnet,
   } = useEnv();
 
-  const chain = environment === "mainnet" ? mainnet : sepolia;
+  const chain = environment === 'mainnet' ? mainnet : sepolia;
   const evmPrivateKey =
-    environment === "mainnet" ? evmPrivateKeyMainnet : evmPrivateKeySepolia;
+    environment === 'mainnet' ? evmPrivateKeyMainnet : evmPrivateKeySepolia;
   const infuraUrl =
-    environment === "mainnet" ? mainnetInfuraUrl : sepoliaInfuraUrl;
+    environment === 'mainnet' ? mainnetInfuraUrl : sepoliaInfuraUrl;
+
+  if (!infuraUrl) {
+    throw new Error(
+      `Infura URL for ${environment} environment is missing. Please set the ${
+        environment === 'mainnet' ? 'mainnetInfuraUrl' : 'sepoliaInfuraUrl'
+      } environment variable.`
+    );
+  }
+
+  if (!evmPrivateKey) {
+    throw new Error(
+      `EVM private key for ${environment} environment is missing. Please set the ${
+        environment === 'mainnet'
+          ? 'evmPrivateKeyMainnet'
+          : 'evmPrivateKeySepolia'
+      } environment variable.`
+    );
+  }
 
   const publicClient = createPublicClient({
     chain,

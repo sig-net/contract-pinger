@@ -49,12 +49,17 @@ module.exports = {
         }
       );
 
+      const requestId = chainSigContract.getRequestId(
+        signArgs[0],
+        signArgs[1].sign
+      );
+
       const transaction = new Transaction().add(instruction);
       const hash = await provider.sendAndConfirm(transaction, [
         requesterKeypair,
       ]);
 
-      return { txHash: hash };
+      return { signatureRequest: { txHash: hash, requestId } };
     }
   },
 };

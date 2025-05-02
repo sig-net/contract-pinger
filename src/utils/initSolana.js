@@ -1,7 +1,7 @@
-const { Connection, Keypair } = require("@solana/web3.js");
-const anchor = require("@coral-xyz/anchor");
-const { contracts } = require("signet.js");
-const { useEnv } = require("./useEnv");
+const { Connection, Keypair } = require('@solana/web3.js');
+const anchor = require('@coral-xyz/anchor');
+const { contracts } = require('signet.js');
+const { useEnv } = require('./useEnv');
 
 const initSolana = () => {
   const {
@@ -10,12 +10,12 @@ const initSolana = () => {
     chainSigAddressSolana,
     chainSigRootPublicKeySolana,
   } = useEnv();
-  const connection = new Connection(solanaRpcUrl, "confirmed");
+  const connection = new Connection(solanaRpcUrl, 'confirmed');
   const keypairArray = JSON.parse(solanaPrivateKey);
   const keypair = Keypair.fromSecretKey(new Uint8Array(keypairArray));
   const wallet = new anchor.Wallet(keypair);
   const provider = new anchor.AnchorProvider(connection, wallet, {
-    commitment: "confirmed",
+    commitment: 'confirmed',
   });
   const requesterKeypair = Keypair.generate();
   const chainSigContract = new contracts.solana.ChainSignatureContract({
@@ -37,18 +37,44 @@ const initSolanaNew = ({ contractAddress, environment }) => {
   } = useEnv();
 
   const solanaRpcUrl =
-    environment === "mainnet" ? solanaRpcUrlMainnet : solanaRpcUrlDevnet;
+    environment === 'mainnet' ? solanaRpcUrlMainnet : solanaRpcUrlDevnet;
   const solanaPrivateKey =
-    environment === "mainnet"
+    environment === 'mainnet'
       ? solanaPrivateKeyMainnet
       : solanaPrivateKeyDevnet;
 
-  const connection = new Connection(solanaRpcUrl, "confirmed");
+  if (!solanaRpcUrl) {
+    throw new Error(
+      `Solana RPC URL for ${environment} environment is missing. Please set the ${
+        environment === 'mainnet' ? 'solanaRpcUrlMainnet' : 'solanaRpcUrlDevnet'
+      } environment variable.`
+    );
+  }
+
+  if (!solanaPrivateKey) {
+    throw new Error(
+      `Solana private key for ${environment} environment is missing. Please set the ${
+        environment === 'mainnet'
+          ? 'solanaPrivateKeyMainnet'
+          : 'solanaPrivateKeyDevnet'
+      } environment variable.`
+    );
+  }
+
+  try {
+    JSON.parse(solanaPrivateKey);
+  } catch (error) {
+    throw new Error(
+      `Invalid Solana private key format for ${environment} environment. The key must be a valid JSON string: ${error.message}`
+    );
+  }
+
+  const connection = new Connection(solanaRpcUrl, 'confirmed');
   const keypairArray = JSON.parse(solanaPrivateKey);
   const keypair = Keypair.fromSecretKey(new Uint8Array(keypairArray));
   const wallet = new anchor.Wallet(keypair);
   const provider = new anchor.AnchorProvider(connection, wallet, {
-    commitment: "confirmed",
+    commitment: 'confirmed',
   });
   const requesterKeypair = Keypair.generate();
   const chainSigContract = new contracts.solana.ChainSignatureContract({
