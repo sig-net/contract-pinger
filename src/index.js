@@ -10,6 +10,7 @@ const {
   createSignRequest,
   signArgs,
 } = require('./utils/evmTransactions');
+const blockchainHandlers = require('./handlers');
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 const API_SECRET = process.env.API_SECRET || 'default-secret-key';
@@ -35,9 +36,46 @@ const validateSecret = (req, res, next) => {
 app.use(validateSecret);
 
 app.post('/ping', async (req, res) => {
-  console.log('ping', req.body);
-  await new Promise(resolve => setTimeout(resolve, 500));
-  res.status(200).send('OK');
+  try {
+    const { chain, check_signature, environment } = req.body;
+
+    const validEnvironments = ['dev', 'testnet', 'mainnet'];
+
+    if (!chain) {
+      return res.status(400).json({ error: 'Missing chain parameter' });
+    }
+
+    if (!blockchainHandlers.supports(chain)) {
+      return res.status(400).json({
+        error: `Unsupported chain: ${chain}`,
+        supportedChains: blockchainHandlers.getSupportedChains(),
+      });
+    }
+
+    if (check_signature === undefined) {
+      return res
+        .status(400)
+        .json({ error: 'Missing check_signature parameter' });
+    }
+
+    if (!environment || !validEnvironments.includes(environment)) {
+      return res.status(400).json({
+        error: 'Invalid or missing environment parameter',
+        validEnvironments,
+      });
+    }
+
+    const handler = blockchainHandlers.getHandler(chain);
+    const result = await handler.execute({ check_signature, environment });
+
+    return res.json(result);
+  } catch (error) {
+    console.error('Ping endpoint error:', error);
+    return res.status(500).json({
+      error: `Failed to process ping request`,
+      details: error instanceof Error ? error.message : String(error),
+    });
+  }
 });
 
 app.post('/near', async (req, res) => {
@@ -167,6 +205,18 @@ app.use((err, req, res, next) => {
 
 const server = app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
+  console.log(
+    `Supported blockchains: ${blockchainHandlers
+      .getSupportedChains()
+      .join(', ')}`
+  );
+
+  const loadErrors = blockchainHandlers.getLoadErrors();
+  if (loadErrors.length > 0) {
+    console.warn(
+      `WARNING: ${loadErrors.length} errors occurred while loading blockchain handlers`
+    );
+  }
 });
 
 process.on('SIGTERM', () => {
