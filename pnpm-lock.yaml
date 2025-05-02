@@ -24,8 +24,8 @@ importers:
         specifier: ^2.1.4
         version: 2.1.4
       signet.js:
-        specifier: 0.0.12-beta.1
-        version: 0.0.12-beta.1(bufferutil@4.0.9)(typescript@5.7.3)(utf-8-validate@5.0.10)
+        specifier: 0.0.12-beta.2
+        version: 0.0.12-beta.2(bufferutil@4.0.9)(typescript@5.7.3)(utf-8-validate@5.0.10)
       viem:
         specifier: ^2.23.5
         version: 2.23.5(bufferutil@4.0.9)(typescript@5.7.3)(utf-8-validate@5.0.10)
@@ -1001,8 +1001,8 @@ packages:
     resolution: {integrity: sha512-ZX99e6tRweoUXqR+VBrslhda51Nh5MTQwou5tnUDgbtyM0dBgmhEDtWGP/xbKn6hqfPRHujUNwz5fy/wbbhnpw==}
     engines: {node: '>= 0.4'}
 
-  signet.js@0.0.12-beta.1:
-    resolution: {integrity: sha512-BhcHUK9GxU2Dq8l8siQpB+zBbzCHon9ST7S+IvG51exDjhXpyNVcBczV+e64VBcTpgC4bfRY1At8M2mZE8jFlg==}
+  signet.js@0.0.12-beta.2:
+    resolution: {integrity: sha512-vTvYmikXs4Skmn/l0VG+gQmcIxITGw/GY54mKgUVQzqy0PF4JHDws2zMpiYhrd09Qd5Z8idy7fSaA/WuhD9pxw==}
 
   simple-update-notifier@2.0.0:
     resolution: {integrity: sha512-a2B9Y0KlNXl9u/vsW6sTIu9vGEpfKu2wRV6l1H3XEas/0gUIzGzBoP/IouTcUQbm9JWZLH3COxyn03TYlFax6w==}
@@ -2428,7 +2428,7 @@ snapshots:
       side-channel-map: 1.0.1
       side-channel-weakmap: 1.0.2
 
-  signet.js@0.0.12-beta.1(bufferutil@4.0.9)(typescript@5.7.3)(utf-8-validate@5.0.10):
+  signet.js@0.0.12-beta.2(bufferutil@4.0.9)(typescript@5.7.3)(utf-8-validate@5.0.10):
     dependencies:
       '@coral-xyz/anchor': 0.31.1(bufferutil@4.0.9)(utf-8-validate@5.0.10)
       '@cosmjs/amino': 0.32.4
