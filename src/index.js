@@ -37,7 +37,7 @@ app.use(validateSecret);
 
 app.post('/ping', async (req, res) => {
   try {
-    const { chain, check, environment } = req.body;
+    const { chain, check, env } = req.body;
 
     const validEnvironments = ['dev', 'testnet', 'mainnet'];
 
@@ -56,7 +56,7 @@ app.post('/ping', async (req, res) => {
       return res.status(400).json({ error: 'Missing check parameter' });
     }
 
-    if (!environment || !validEnvironments.includes(environment)) {
+    if (!env || !validEnvironments.includes(env)) {
       return res.status(400).json({
         error: 'Invalid or missing environment parameter',
         validEnvironments,
@@ -66,7 +66,7 @@ app.post('/ping', async (req, res) => {
     const handler = blockchainHandlers.getHandler(chain);
     const result = await handler.execute({
       check_signature: check,
-      environment,
+      environment: env,
     });
 
     return res.json(result);
