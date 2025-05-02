@@ -44,11 +44,23 @@ const initNearNew = async ({ contractAddress, environment }) => {
     nearPrivateKeyTestnet,
   } = useEnv();
 
-  const nearAccount =
-    environment === 'mainnet' ? nearAccountIdMainnet : nearAccountIdTestnet;
-  const nearPrivateKey =
-    environment === 'mainnet' ? nearPrivateKeyMainnet : nearPrivateKeyTestnet;
-  const nearNetworkId = environment === 'mainnet' ? 'mainnet' : 'testnet';
+  const { nearAccount, nearPrivateKey, nearNetworkId } = {
+    dev: {
+      nearAccount: nearAccountIdTestnet,
+      nearPrivateKey: nearPrivateKeyTestnet,
+      nearNetworkId: 'testnet',
+    },
+    testnet: {
+      nearAccount: nearAccountIdTestnet,
+      nearPrivateKey: nearPrivateKeyTestnet,
+      nearNetworkId: 'testnet',
+    },
+    mainnet: {
+      nearAccount: nearAccountIdMainnet,
+      nearPrivateKey: nearPrivateKeyMainnet,
+      nearNetworkId: 'mainnet',
+    },
+  }[environment];
 
   if (!nearAccount) {
     throw new Error(

@@ -40,11 +40,23 @@ const initEthereum = ({ contractAddress, environment }) => {
     evmPrivateKeyMainnet,
   } = useEnv();
 
-  const chain = environment === 'mainnet' ? mainnet : sepolia;
-  const evmPrivateKey =
-    environment === 'mainnet' ? evmPrivateKeyMainnet : evmPrivateKeySepolia;
-  const infuraUrl =
-    environment === 'mainnet' ? mainnetInfuraUrl : sepoliaInfuraUrl;
+  const { chain, evmPrivateKey, infuraUrl } = {
+    dev: {
+      chain: sepolia,
+      evmPrivateKey: evmPrivateKeySepolia,
+      infuraUrl: sepoliaInfuraUrl,
+    },
+    testnet: {
+      chain: sepolia,
+      evmPrivateKey: evmPrivateKeySepolia,
+      infuraUrl: sepoliaInfuraUrl,
+    },
+    mainnet: {
+      chain: mainnet,
+      evmPrivateKey: evmPrivateKeyMainnet,
+      infuraUrl: mainnetInfuraUrl,
+    },
+  }[environment];
 
   if (!infuraUrl) {
     throw new Error(

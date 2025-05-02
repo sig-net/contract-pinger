@@ -36,12 +36,20 @@ const initSolanaNew = ({ contractAddress, environment }) => {
     solanaPrivateKeyMainnet,
   } = useEnv();
 
-  const solanaRpcUrl =
-    environment === 'mainnet' ? solanaRpcUrlMainnet : solanaRpcUrlDevnet;
-  const solanaPrivateKey =
-    environment === 'mainnet'
-      ? solanaPrivateKeyMainnet
-      : solanaPrivateKeyDevnet;
+  const { solanaRpcUrl, solanaPrivateKey } = {
+    dev: {
+      solanaRpcUrl: solanaRpcUrlDevnet,
+      solanaPrivateKey: solanaPrivateKeyDevnet,
+    },
+    testnet: {
+      solanaRpcUrl: solanaRpcUrlDevnet,
+      solanaPrivateKey: solanaPrivateKeyDevnet,
+    },
+    mainnet: {
+      solanaRpcUrl: solanaRpcUrlMainnet,
+      solanaPrivateKey: solanaPrivateKeyMainnet,
+    },
+  }[environment];
 
   if (!solanaRpcUrl) {
     throw new Error(
