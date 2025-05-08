@@ -1,6 +1,6 @@
 const { Transaction } = require('@solana/web3.js');
 const { initSolanaNew } = require('../utils/initSolana');
-const { signArgs } = require('../utils/evmTransactions');
+const { getSignArgs } = require('../utils/evmTransactions');
 const { constants } = require('signet.js');
 
 module.exports = {
@@ -19,6 +19,8 @@ module.exports = {
       contractAddress,
       environment,
     });
+
+    const signArgs = getSignArgs();
 
     if (check_signature) {
       const signature = await chainSigContract.sign(signArgs[0], {

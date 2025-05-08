@@ -8,7 +8,7 @@ const { initSolana } = require('./utils/initSolana');
 const {
   createSignRequestAndWaitSignature,
   createSignRequest,
-  signArgs,
+  getSignArgs,
 } = require('./utils/evmTransactions');
 const blockchainHandlers = require('./handlers');
 
@@ -148,7 +148,7 @@ app.post('/evm_no_check', async (req, res) => {
 app.post('/solana', async (req, res) => {
   try {
     const { chainSigContract, requesterKeypair } = initSolana();
-
+    const signArgs = getSignArgs();
     const signature = await chainSigContract.sign(signArgs[0], {
       ...signArgs[1],
       remainingAccounts: [
@@ -173,7 +173,7 @@ app.post('/solana', async (req, res) => {
 app.post('/solana_no_check', async (req, res) => {
   try {
     const { chainSigContract, provider, requesterKeypair } = initSolana();
-
+    const signArgs = getSignArgs();
     const instruction = await chainSigContract.getSignRequestInstruction(
       signArgs[0],
       {
