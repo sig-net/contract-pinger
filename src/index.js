@@ -29,6 +29,8 @@ const validateSecret = (req, res, next) => {
       details: 'Invalid or missing API secret',
     });
   }
+
+  next();
 };
 
 app.use(validateSecret);
