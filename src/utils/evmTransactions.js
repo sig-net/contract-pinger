@@ -1,28 +1,29 @@
+const getSignArgs = () => {
+  const payload = new Uint8Array(
+    Array(32)
+      .fill()
+      .map(() => Math.floor(Math.random() * 256))
+  );
 
-const signArgs = [
-  {
-    payload: new Uint8Array(
-      Array(32)
-        .fill()
-        .map(() => Math.floor(Math.random() * 256))
-    ),
-    path: '',
-    key_version: 0,
-  },
-  {
-    sign: {
-      algo: '',
-      dest: '',
-      params: '',
+  return [
+    {
+      payload,
+      path: '',
+      key_version: 0,
     },
-  },
-];
+    {
+      sign: {
+        algo: '',
+        dest: '',
+        params: '',
+      },
+    },
+  ];
+};
 
-const getCustomTransactionArgs = async ({
-  publicClient,
-  walletClient,
-}) => {
-  const { maxFeePerGas, maxPriorityFeePerGas } = await publicClient.estimateFeesPerGas();
+const getCustomTransactionArgs = async ({ publicClient, walletClient }) => {
+  const { maxFeePerGas, maxPriorityFeePerGas } =
+    await publicClient.estimateFeesPerGas();
 
   const nonce = await publicClient.getTransactionCount({
     address: walletClient.account.address,
@@ -30,11 +31,11 @@ const getCustomTransactionArgs = async ({
   });
 
   return {
-    maxFeePerGas: maxFeePerGas * 12n / 10n,
-    maxPriorityFeePerGas: maxPriorityFeePerGas * 12n / 10n,
+    maxFeePerGas: (maxFeePerGas * 12n) / 10n,
+    maxPriorityFeePerGas: (maxPriorityFeePerGas * 12n) / 10n,
     nonce,
-  }
-}
+  };
+};
 
 const createSignRequestAndWaitSignature = async ({
   chainSigContract,
@@ -45,7 +46,7 @@ const createSignRequestAndWaitSignature = async ({
     publicClient,
     walletClient,
   });
-
+  const signArgs = getSignArgs();
   const rsvSignature = await chainSigContract.sign(signArgs[0], {
     ...signArgs[1],
     retry: {
@@ -68,12 +69,12 @@ const createSignRequest = async ({
     publicClient,
     walletClient,
   });
-
+  const signArgs = getSignArgs();
   const signatureRequest = await chainSigContract.createSignatureRequest(
     signArgs[0],
     {
       ...signArgs[1],
-      transaction: transactionArgs
+      transaction: transactionArgs,
     }
   );
 
@@ -84,5 +85,5 @@ const createSignRequest = async ({
 module.exports = {
   createSignRequestAndWaitSignature,
   createSignRequest,
-  signArgs,
+  getSignArgs,
 };
