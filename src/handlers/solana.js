@@ -8,8 +8,8 @@ module.exports = {
 
   contractAddresses: {
     dev: constants.CONTRACT_ADDRESSES.SOLANA.TESTNET_DEV,
-    testnet: '',
-    mainnet: '',
+    testnet: constants.CONTRACT_ADDRESSES.SOLANA.TESTNET,
+    mainnet: constants.CONTRACT_ADDRESSES.SOLANA.MAINNET,
   },
 
   async execute({ check_signature, environment }) {
