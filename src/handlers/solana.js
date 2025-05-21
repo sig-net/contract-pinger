@@ -33,6 +33,10 @@ module.exports = {
           },
         ],
         remainingSigners: [requesterKeypair],
+        retry: {
+          delay: 5000,
+          retryCount: 6,
+        },
       });
 
       return { signature };
