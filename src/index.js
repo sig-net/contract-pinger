@@ -1,15 +1,7 @@
 const express = require('express');
 const dotenv = require('dotenv');
-const { Transaction } = require('@solana/web3.js');
 dotenv.config();
 
-const { initEvm } = require('./utils/initEvm');
-const { initSolana } = require('./utils/initSolana');
-const {
-  createSignRequestAndWaitSignature,
-  createSignRequest,
-  getSignArgs,
-} = require('./utils/evmTransactions');
 const blockchainHandlers = require('./handlers');
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
@@ -74,126 +66,6 @@ app.post('/ping', async (req, res) => {
     console.error('Ping endpoint error:', error);
     return res.status(500).json({
       error: `Failed to process ping request`,
-      details: error instanceof Error ? error.message : String(error),
-    });
-  }
-});
-
-app.post('/near', async (req, res) => {
-  try {
-    const { chainSigContract } = await initNear({
-      contractAddress: req.body.contractAddress,
-    });
-
-    const txHash = await createSignRequestAndWaitSignature({
-      chainSigContract,
-    });
-
-    res.json({ txHash });
-  } catch (error) {
-    res.status(500).json({
-      error: 'Failed to execute EVM transaction',
-      details: error instanceof Error ? error.message : String(error),
-    });
-  }
-});
-
-app.post('/evm', async (req, res) => {
-  console.log('evm 2.0');
-  try {
-    const { chainSigContract, publicClient, walletClient } = initEvm({
-      contractAddress: req.body.contractAddress,
-    });
-
-    const signature = await createSignRequestAndWaitSignature({
-      chainSigContract,
-      publicClient,
-      walletClient,
-    });
-
-    res.json({ signature });
-  } catch (error) {
-    res.status(500).json({
-      error: 'Failed to execute EVM transaction',
-      details: error instanceof Error ? error.message : String(error),
-    });
-  }
-});
-
-app.post('/evm_no_check', async (req, res) => {
-  console.log('evm_no_check 2.0');
-  try {
-    const { chainSigContract, publicClient, walletClient } = initEvm({
-      contractAddress: req.body.contractAddress,
-    });
-
-    const signatureRequest = await createSignRequest({
-      chainSigContract,
-      publicClient,
-      walletClient,
-    });
-
-    res.json({ signatureRequest });
-  } catch (error) {
-    console.log({ error });
-    res.status(500).json({
-      error: 'Failed to execute EVM transaction',
-      details: error instanceof Error ? error.message : String(error),
-    });
-  }
-});
-
-// TODO: replace with real calls
-
-app.post('/solana', async (req, res) => {
-  try {
-    const { chainSigContract, requesterKeypair } = initSolana();
-    const signArgs = getSignArgs();
-    const signature = await chainSigContract.sign(signArgs[0], {
-      ...signArgs[1],
-      remainingAccounts: [
-        {
-          pubkey: requesterKeypair.publicKey,
-          isWritable: false,
-          isSigner: true,
-        },
-      ],
-      remainingSigners: [requesterKeypair],
-    });
-
-    res.json({ signature });
-  } catch (error) {
-    res.status(500).json({
-      error: 'Failed to execute Solana transaction',
-      details: error instanceof Error ? error.message : String(error),
-    });
-  }
-});
-
-app.post('/solana_no_check', async (req, res) => {
-  try {
-    const { chainSigContract, provider, requesterKeypair } = initSolana();
-    const signArgs = getSignArgs();
-    const instruction = await chainSigContract.getSignRequestInstruction(
-      signArgs[0],
-      {
-        ...signArgs[1],
-        remainingAccounts: [
-          {
-            pubkey: requesterKeypair.publicKey,
-            isWritable: false,
-            isSigner: true,
-          },
-        ],
-      }
-    );
-    const transaction = new Transaction().add(instruction);
-    const hash = await provider.sendAndConfirm(transaction, [requesterKeypair]);
-
-    res.json({ txHash: hash });
-  } catch (error) {
-    res.status(500).json({
-      error: 'Failed to execute Solana transaction',
       details: error instanceof Error ? error.message : String(error),
     });
   }
