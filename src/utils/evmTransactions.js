@@ -51,7 +51,7 @@ const createSignRequestAndWaitSignature = async ({
     ...signArgs[1],
     retry: {
       delay: 10000,
-      retryCount: 12,
+      retryCount: 0,
     },
     transaction: transactionArgs,
   });
