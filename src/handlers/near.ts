@@ -10,9 +10,16 @@ export const contractAddresses = {
   mainnet: constants.CONTRACT_ADDRESSES.NEAR.MAINNET,
 };
 
-export async function execute({ environment }: { environment: keyof typeof contractAddresses }) {
+export async function execute({
+  environment,
+}: {
+  environment: keyof typeof contractAddresses;
+}) {
   const contractAddress = contractAddresses[environment];
-  const { chainSigContract } = await initNearNew({ contractAddress, environment });
+  const { chainSigContract } = await initNearNew({
+    contractAddress,
+    environment,
+  });
   const txHash = await createSignRequestAndWaitSignature({ chainSigContract });
   return { txHash };
 }

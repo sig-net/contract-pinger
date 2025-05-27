@@ -11,9 +11,12 @@ exports.contractAddresses = {
     testnet: signet_js_1.constants.CONTRACT_ADDRESSES.NEAR.TESTNET,
     mainnet: signet_js_1.constants.CONTRACT_ADDRESSES.NEAR.MAINNET,
 };
-async function execute({ environment }) {
+async function execute({ environment, }) {
     const contractAddress = exports.contractAddresses[environment];
-    const { chainSigContract } = await (0, initNear_1.initNearNew)({ contractAddress, environment });
+    const { chainSigContract } = await (0, initNear_1.initNearNew)({
+        contractAddress,
+        environment,
+    });
     const txHash = await (0, evmTransactions_1.createSignRequestAndWaitSignature)({ chainSigContract });
     return { txHash };
 }

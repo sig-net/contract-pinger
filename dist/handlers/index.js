@@ -65,8 +65,8 @@ class BlockchainHandlerRegistry {
         try {
             const files = fs
                 .readdirSync(directory)
-                .filter((file) => file !== 'index.ts' && file.endsWith('.ts'));
-            files.forEach((file) => {
+                .filter(file => file !== 'index.ts' && file.endsWith('.ts'));
+            files.forEach(file => {
                 const filePath = path.join(directory, file);
                 try {
                     let handler;

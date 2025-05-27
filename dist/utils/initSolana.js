@@ -39,32 +39,55 @@ const anchor = __importStar(require("@coral-xyz/anchor"));
 const signet_js_1 = require("signet.js");
 const useEnv_1 = require("./useEnv");
 const initSolana = () => {
-    const { solanaRpcUrl, solanaPrivateKey, chainSigAddressSolana, chainSigRootPublicKeySolana } = (0, useEnv_1.useEnv)();
+    const { solanaRpcUrl, solanaPrivateKey, chainSigAddressSolana, chainSigRootPublicKeySolana, } = (0, useEnv_1.useEnv)();
     const connection = new web3_js_1.Connection(solanaRpcUrl, 'confirmed');
     const keypairArray = JSON.parse(solanaPrivateKey);
     const keypair = web3_js_1.Keypair.fromSecretKey(new Uint8Array(keypairArray));
     const wallet = new anchor.Wallet(keypair);
-    const provider = new anchor.AnchorProvider(connection, wallet, { commitment: 'confirmed' });
+    const provider = new anchor.AnchorProvider(connection, wallet, {
+        commitment: 'confirmed',
+    });
     const requesterKeypair = web3_js_1.Keypair.generate();
-    const chainSigContract = new signet_js_1.contracts.solana.ChainSignatureContract({ provider, programId: chainSigAddressSolana, rootPublicKey: chainSigRootPublicKeySolana, requesterAddress: requesterKeypair.publicKey.toString() });
+    const chainSigContract = new signet_js_1.contracts.solana.ChainSignatureContract({
+        provider,
+        programId: chainSigAddressSolana,
+        rootPublicKey: chainSigRootPublicKeySolana,
+        requesterAddress: requesterKeypair.publicKey.toString(),
+    });
     return { chainSigContract, provider, requesterKeypair };
 };
 exports.initSolana = initSolana;
-const initSolanaNew = ({ contractAddress, environment }) => {
-    const { solanaRpcUrlDevnet, solanaRpcUrlMainnet, solanaPrivateKeyDevnet, solanaPrivateKeyMainnet } = (0, useEnv_1.useEnv)();
+const initSolanaNew = ({ contractAddress, environment, }) => {
+    const { solanaRpcUrlDevnet, solanaRpcUrlMainnet, solanaPrivateKeyDevnet, solanaPrivateKeyMainnet, } = (0, useEnv_1.useEnv)();
     const config = {
-        dev: { solanaRpcUrl: solanaRpcUrlDevnet, solanaPrivateKey: solanaPrivateKeyDevnet },
-        testnet: { solanaRpcUrl: solanaRpcUrlDevnet, solanaPrivateKey: solanaPrivateKeyDevnet },
-        mainnet: { solanaRpcUrl: solanaRpcUrlMainnet, solanaPrivateKey: solanaPrivateKeyMainnet },
+        dev: {
+            solanaRpcUrl: solanaRpcUrlDevnet,
+            solanaPrivateKey: solanaPrivateKeyDevnet,
+        },
+        testnet: {
+            solanaRpcUrl: solanaRpcUrlDevnet,
+            solanaPrivateKey: solanaPrivateKeyDevnet,
+        },
+        mainnet: {
+            solanaRpcUrl: solanaRpcUrlMainnet,
+            solanaPrivateKey: solanaPrivateKeyMainnet,
+        },
     }[environment];
     const connection = new web3_js_1.Connection(config.solanaRpcUrl, 'confirmed');
     const keypairArray = JSON.parse(config.solanaPrivateKey);
     const keypair = web3_js_1.Keypair.fromSecretKey(new Uint8Array(keypairArray));
     const wallet = new anchor.Wallet(keypair);
-    const provider = new anchor.AnchorProvider(connection, wallet, { commitment: 'confirmed' });
+    const provider = new anchor.AnchorProvider(connection, wallet, {
+        commitment: 'confirmed',
+    });
     const requesterKeypair = web3_js_1.Keypair.generate();
     // You may want to pass a real rootPublicKey here if needed
-    const chainSigContract = new signet_js_1.contracts.solana.ChainSignatureContract({ provider, programId: contractAddress, rootPublicKey: '', requesterAddress: requesterKeypair.publicKey.toString() });
+    const chainSigContract = new signet_js_1.contracts.solana.ChainSignatureContract({
+        provider,
+        programId: contractAddress,
+        rootPublicKey: '',
+        requesterAddress: requesterKeypair.publicKey.toString(),
+    });
     return { chainSigContract, provider, requesterKeypair };
 };
 exports.initSolanaNew = initSolanaNew;
