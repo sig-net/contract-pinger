@@ -5,12 +5,12 @@ const useEnv = () => {
     const getRotatingKey = () => {
         const currentTime = new Date().getTime();
         const keyIndex = (currentTime % 5) + 1;
-        return process.env[`EMV_PRIVATE_KEY_${keyIndex}`];
+        return process.env[`EVM_PRIVATE_KEY_${keyIndex}`];
     };
     const getRotatingKeyMainnet = () => {
         const currentTime = new Date().getTime();
         const keyIndex = (currentTime % 5) + 1;
-        return process.env[`EMV_PRIVATE_KEY_MAINNET_${keyIndex}`];
+        return process.env[`EVM_PRIVATE_KEY_MAINNET_${keyIndex}`];
     };
     return {
         port: process.env.PORT || '3001',

@@ -46,6 +46,7 @@ app.post('/ping', (async (req, res) => {
         res.status(500).json({ error: 'Internal server error', details: error });
     }
 }));
+exports.default = app;
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });

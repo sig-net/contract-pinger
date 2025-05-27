@@ -55,6 +55,8 @@ app.post('/ping', (async (req: express.Request, res: express.Response) => {
   }
 }) as express.RequestHandler);
 
+export default app;
+
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });

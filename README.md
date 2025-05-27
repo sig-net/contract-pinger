@@ -34,5 +34,11 @@ pnpm start
 pnpm dev
 ```
 
+### Test
+Run all integration and unit tests:
+```sh
+pnpm test
+```
+
 ## Environment Variables
 Copy `.env.example` to `.env` and fill in the required values for your environment.
