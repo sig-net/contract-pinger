@@ -1,7 +1,7 @@
 import request from 'supertest';
 import app from '../src/index';
 
-describe('/ping integration', () => {
+describe('/ping input parameters', () => {
   const API_SECRET = process.env.API_SECRET || 'default-secret-key';
 
   it('should return 401 if secret is missing', async () => {
@@ -57,21 +57,12 @@ describe('/ping integration', () => {
     expect(res.body.error).toBe('Missing check parameter');
   });
 
-  it('should return 400 if check is missing', async () => {
-    const res = await request(app)
-      .post('/ping')
-      .set('x-api-secret', API_SECRET)
-      .send({ chain: 'Solana', env: 'dev' });
-    expect(res.status).toBe(400);
-    expect(res.body.error).toBe('Missing check parameter');
-  });
-
-  it('should return 400 if check is wrong', async () => {
+  it('should return 400 if check is not a boolean', async () => {
     const res = await request(app)
       .post('/ping')
       .set('x-api-secret', API_SECRET)
       .send({ chain: 'Solana', env: 'dev', check: 'not a boolean value' });
     expect(res.status).toBe(400);
-    expect(res.body.error).toBe('Missing check parameter');
+    expect(res.body.error).toBe('Invalid check parameter: must be boolean');
   });
 });

@@ -53,6 +53,13 @@ app.post(
         return;
       }
 
+      if (typeof check !== 'boolean') {
+        res
+          .status(400)
+          .json({ error: 'Invalid check parameter: must be boolean' });
+        return;
+      }
+
       if (!env || !validEnvironments.includes(env)) {
         res.status(400).json({
           error: 'Invalid or missing environment parameter',
