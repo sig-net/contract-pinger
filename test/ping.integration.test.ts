@@ -1,5 +1,5 @@
 import request from 'supertest';
-import app from '../src/index';
+import { app, server } from '../src/index';
 
 describe('/ping input parameters', () => {
   const API_SECRET = process.env.API_SECRET || 'default-secret-key';
@@ -65,4 +65,8 @@ describe('/ping input parameters', () => {
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('Invalid check parameter: must be boolean');
   });
+});
+
+afterAll(done => {
+  server.close(done);
 });

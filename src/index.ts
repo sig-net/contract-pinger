@@ -119,4 +119,4 @@ process.on('SIGTERM', () => {
   });
 });
 
-export default app;
+export { app, server };
