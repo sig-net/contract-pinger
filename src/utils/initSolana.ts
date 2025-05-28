@@ -3,31 +3,7 @@ import * as anchor from '@coral-xyz/anchor';
 import { contracts } from 'signet.js';
 import { useEnv } from './useEnv';
 
-export const initSolana = () => {
-  const {
-    solanaRpcUrl,
-    solanaPrivateKey,
-    chainSigAddressSolana,
-    chainSigRootPublicKeySolana,
-  } = useEnv();
-  const connection = new Connection(solanaRpcUrl, 'confirmed');
-  const keypairArray = JSON.parse(solanaPrivateKey);
-  const keypair = Keypair.fromSecretKey(new Uint8Array(keypairArray));
-  const wallet = new anchor.Wallet(keypair);
-  const provider = new anchor.AnchorProvider(connection, wallet, {
-    commitment: 'confirmed',
-  });
-  const requesterKeypair = Keypair.generate();
-  const chainSigContract = new contracts.solana.ChainSignatureContract({
-    provider,
-    programId: chainSigAddressSolana,
-    rootPublicKey: chainSigRootPublicKeySolana as `secp256k1:${string}`,
-    requesterAddress: requesterKeypair.publicKey.toString(),
-  });
-  return { chainSigContract, provider, requesterKeypair };
-};
-
-export const initSolanaNew = ({
+export const initSolana = ({
   contractAddress,
   environment,
 }: {
@@ -35,23 +11,22 @@ export const initSolanaNew = ({
   environment: 'dev' | 'testnet' | 'mainnet';
 }) => {
   const {
-    solanaRpcUrlDevnet,
-    solanaRpcUrlMainnet,
-    solanaPrivateKeyDevnet,
-    solanaPrivateKeyMainnet,
+    solRpcUrlDevnet,
+    solRpcUrlMainnet,
+    solSk,
   } = useEnv();
   const config = {
     dev: {
-      solanaRpcUrl: solanaRpcUrlDevnet,
-      solanaPrivateKey: solanaPrivateKeyDevnet,
+      solanaRpcUrl: solRpcUrlDevnet,
+      solanaPrivateKey: solSk,
     },
     testnet: {
-      solanaRpcUrl: solanaRpcUrlDevnet,
-      solanaPrivateKey: solanaPrivateKeyDevnet,
+      solanaRpcUrl: solRpcUrlDevnet,
+      solanaPrivateKey: solSk,
     },
     mainnet: {
-      solanaRpcUrl: solanaRpcUrlMainnet,
-      solanaPrivateKey: solanaPrivateKeyMainnet,
+      solanaRpcUrl: solRpcUrlMainnet,
+      solanaPrivateKey: solSk,
     },
   }[environment];
   const connection = new Connection(config.solanaRpcUrl, 'confirmed');

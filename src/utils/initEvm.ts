@@ -4,30 +4,6 @@ import { sepolia, mainnet } from 'viem/chains';
 import { useEnv } from './useEnv';
 import { contracts } from 'signet.js';
 
-export const initEvm = ({ contractAddress }: { contractAddress: string }) => {
-  const { sepoliaInfuraUrl, evmPrivateKey } = useEnv();
-  const publicClient = createPublicClient({
-    chain: sepolia,
-    transport: http(sepoliaInfuraUrl),
-  });
-  const account = privateKeyToAccount(
-    (evmPrivateKey.startsWith('0x')
-      ? evmPrivateKey
-      : `0x${evmPrivateKey}`) as `0x${string}`
-  );
-  const walletClient = createWalletClient({
-    account,
-    chain: sepolia,
-    transport: http(sepoliaInfuraUrl),
-  });
-  const chainSigContract = new contracts.evm.ChainSignatureContract({
-    publicClient,
-    walletClient,
-    contractAddress: contractAddress as `0x${string}`,
-  });
-  return { publicClient, walletClient, chainSigContract };
-};
-
 export const initEthereum = ({
   contractAddress,
   environment,
@@ -36,26 +12,25 @@ export const initEthereum = ({
   environment: 'dev' | 'testnet' | 'mainnet';
 }) => {
   const {
-    sepoliaInfuraUrl,
-    mainnetInfuraUrl,
-    evmPrivateKeySepolia,
-    evmPrivateKeyMainnet,
+    ethRpcUrlSepolia,
+    ethRpcUrlMainnet,
+    evmSk,
   } = useEnv();
   const config = {
     dev: {
       chain: sepolia,
-      evmPrivateKey: evmPrivateKeySepolia,
-      infuraUrl: sepoliaInfuraUrl,
+      evmPrivateKey: evmSk,
+      infuraUrl: ethRpcUrlSepolia,
     },
     testnet: {
       chain: sepolia,
-      evmPrivateKey: evmPrivateKeySepolia,
-      infuraUrl: sepoliaInfuraUrl,
+      evmPrivateKey: evmSk,
+      infuraUrl: ethRpcUrlSepolia,
     },
     mainnet: {
       chain: mainnet,
-      evmPrivateKey: evmPrivateKeyMainnet,
-      infuraUrl: mainnetInfuraUrl,
+      evmPrivateKey: evmSk,
+      infuraUrl: ethRpcUrlMainnet,
     },
   }[environment];
 

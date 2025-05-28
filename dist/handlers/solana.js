@@ -14,7 +14,7 @@ exports.contractAddresses = {
 };
 async function execute({ check_signature, environment, }) {
     const contractAddress = exports.contractAddresses[environment];
-    const { chainSigContract, provider, requesterKeypair } = (0, initSolana_1.initSolanaNew)({
+    const { chainSigContract, provider, requesterKeypair } = (0, initSolana_1.initSolana)({
         contractAddress,
         environment,
     });

@@ -1,4 +1,4 @@
-import { initSolanaNew } from '../utils/initSolana';
+import { initSolana } from '../utils/initSolana';
 import { getSignArgs } from '../utils/evmTransactions';
 import { constants } from 'signet.js';
 import { Transaction } from '@solana/web3.js';
@@ -19,7 +19,7 @@ export async function execute({
   environment: keyof typeof contractAddresses;
 }) {
   const contractAddress = contractAddresses[environment];
-  const { chainSigContract, provider, requesterKeypair } = initSolanaNew({
+  const { chainSigContract, provider, requesterKeypair } = initSolana({
     contractAddress,
     environment,
   });
