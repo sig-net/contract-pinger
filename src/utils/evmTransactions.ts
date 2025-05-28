@@ -39,15 +39,20 @@ export const createSignRequestAndWaitSignature = async ({
   publicClient?: any;
   walletClient?: any;
 }) => {
-  const transactionArgs =
-    publicClient && walletClient
-      ? await getCustomTransactionArgs({ publicClient, walletClient })
-      : {};
+  const transactionArgs = await getCustomTransactionArgs({
+    publicClient,
+    walletClient,
+  });
   const signArgs = getSignArgs();
-  const rsvSignature = await chainSigContract.sign(
-    signArgs[0],
-    transactionArgs
-  );
+  const rsvSignature = await chainSigContract.sign(signArgs[0], {
+    ...signArgs[1],
+    retry: {
+      delay: 10000,
+      retryCount: 12,
+    },
+    transaction: transactionArgs,
+  });
+  console.log({ rsvSignature });
   return rsvSignature;
 };
 
@@ -60,14 +65,18 @@ export const createSignRequest = async ({
   publicClient?: any;
   walletClient?: any;
 }) => {
-  const transactionArgs =
-    publicClient && walletClient
-      ? await getCustomTransactionArgs({ publicClient, walletClient })
-      : {};
+  const transactionArgs = await getCustomTransactionArgs({
+    publicClient,
+    walletClient,
+  });
   const signArgs = getSignArgs();
-  const signatureRequest = await chainSigContract.createSignRequest(
+  const signatureRequest = await chainSigContract.createSignatureRequest(
     signArgs[0],
-    transactionArgs
+    {
+      ...signArgs[1],
+      transaction: transactionArgs,
+    }
   );
+  console.log({ signatureRequest });
   return signatureRequest;
 };

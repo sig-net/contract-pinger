@@ -5,6 +5,7 @@ exports.execute = execute;
 const initSolana_1 = require("../utils/initSolana");
 const evmTransactions_1 = require("../utils/evmTransactions");
 const signet_js_1 = require("signet.js");
+const web3_js_1 = require("@solana/web3.js");
 exports.chainName = 'Solana';
 exports.contractAddresses = {
     dev: signet_js_1.constants.CONTRACT_ADDRESSES.SOLANA.TESTNET_DEV,
@@ -44,6 +45,9 @@ async function execute({ check_signature, environment, }) {
                 },
             ],
         });
-        return { instruction };
+        const requestId = chainSigContract.getRequestId(signArgs[0], signArgs[1].sign);
+        const transaction = new web3_js_1.Transaction().add(instruction);
+        const hash = await provider.sendAndConfirm(transaction, [requesterKeypair]);
+        return { signatureRequest: { txHash: hash, requestId } };
     }
 }

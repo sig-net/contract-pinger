@@ -47,6 +47,14 @@ const initEthereum = ({ contractAddress, environment, }) => {
             infuraUrl: mainnetInfuraUrl,
         },
     }[environment];
+    if (!config.infuraUrl) {
+        throw new Error(`Infura URL for ${environment} environment is missing. Please set the ${environment === 'mainnet' ? 'mainnetInfuraUrl' : 'sepoliaInfuraUrl'} environment variable.`);
+    }
+    if (!config.evmPrivateKey) {
+        throw new Error(`EVM private key for ${environment} environment is missing. Please set the ${environment === 'mainnet'
+            ? 'evmPrivateKeyMainnet'
+            : 'evmPrivateKeySepolia'} environment variable.`);
+    }
     const publicClient = (0, viem_1.createPublicClient)({
         chain: config.chain,
         transport: (0, viem_1.http)(config.infuraUrl),

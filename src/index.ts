@@ -25,38 +25,81 @@ const validateSecret = (req: Request, res: Response, next: NextFunction) => {
   next();
 };
 
-// Use generics for Express v5 compatibility
 app.use(validateSecret as express.RequestHandler);
 
-app.post('/ping', (async (req: express.Request, res: express.Response) => {
+app.post('/ping', async (req: express.Request, res: express.Response): Promise<void> => {
   try {
     const { chain, check, env } = req.body;
 
     const validEnvironments = ['dev', 'testnet', 'mainnet'];
 
     if (!chain) {
-      return res.status(400).json({ error: 'Missing chain parameter' });
+      res.status(400).json({ error: 'Missing chain parameter' });
+      return;
     }
 
     if (!blockchainHandlers.supports(chain)) {
-      return res.status(400).json({
+      res.status(400).json({
         error: `Unsupported chain: ${chain}`,
         supportedChains: blockchainHandlers.getSupportedChains(),
       });
+      return;
     }
 
     if (check === undefined) {
-      return res.status(400).json({ error: 'Missing check parameter' });
+      res.status(400).json({ error: 'Missing check parameter' });
+      return;
     }
 
-    // ...existing code...
+    if (!env || !validEnvironments.includes(env)) {
+      res.status(400).json({
+        error: 'Invalid or missing environment parameter',
+        validEnvironments,
+      });
+      return;
+    }
+
+    const handler = blockchainHandlers.getHandler(chain);
+    const result = await handler.execute({
+      check_signature: check,
+      environment: env,
+    });
+
+    res.json(result);
   } catch (error) {
-    res.status(500).json({ error: 'Internal server error', details: error });
+    console.error('Ping endpoint error:', error);
+    res.status(500).json({
+      error: `Failed to process ping request`,
+      details: error instanceof Error ? error.message : String(error),
+    });
   }
-}) as express.RequestHandler);
+});
+
+// Global error handler
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error(err.stack);
+  res.status(500).send('Something broke!');
+});
+
+const server = app.listen(PORT, () => {
+  console.log(`Server running at http://localhost:${PORT}`);
+  console.log(
+    `Supported blockchains: ${blockchainHandlers.getSupportedChains().join(', ')}`
+  );
+
+  const loadErrors = blockchainHandlers.getLoadErrors?.() || [];
+  if (loadErrors.length > 0) {
+    console.warn(
+      `WARNING: ${loadErrors.length} errors occurred while loading blockchain handlers`
+    );
+  }
+});
+
+process.on('SIGTERM', () => {
+  console.log('SIGTERM signal received: closing HTTP server');
+  server.close(() => {
+    console.log('HTTP server closed');
+  });
+});
 
 export default app;
-
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});

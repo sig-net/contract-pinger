@@ -1,13 +1,13 @@
 import request from 'supertest';
 import app from '../src/index';
 
-describe('/ping integration (minimal)', () => {
+describe('/ping integration', () => {
   const API_SECRET = process.env.API_SECRET || 'default-secret-key';
 
   it('should return 401 if secret is missing', async () => {
     const res = await request(app)
       .post('/ping')
-      .send({ chain: 'ethereum', check: true, env: 'dev' });
+      .send({ chain: 'Solana', check: true, env: 'dev' });
     expect(res.status).toBe(401);
     expect(res.body.error).toBe('Unauthorized');
   });
@@ -21,11 +21,29 @@ describe('/ping integration (minimal)', () => {
     expect(res.body.error).toBe('Missing chain parameter');
   });
 
+  it('should return 400 if chain is unsupported', async () => {
+    const res = await request(app)
+      .post('/ping')
+      .set('x-api-secret', API_SECRET)
+      .send({ chain: 'unsupported', check: true, env: 'dev' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch('Unsupported chain');
+  });
+
+  it('should return 400 if env is missing', async () => {
+    const res = await request(app)
+      .post('/ping')
+      .set('x-api-secret', API_SECRET)
+      .send({ chain: 'Solana', check: true });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Invalid or missing environment parameter');
+  });
+
   it('should return 400 if env is invalid', async () => {
     const res = await request(app)
       .post('/ping')
       .set('x-api-secret', API_SECRET)
-      .send({ chain: 'ethereum', check: true, env: 'invalid' });
+      .send({ chain: 'Solana', check: true, env: 'invalid' });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('Invalid or missing environment parameter');
   });
@@ -34,17 +52,26 @@ describe('/ping integration (minimal)', () => {
     const res = await request(app)
       .post('/ping')
       .set('x-api-secret', API_SECRET)
-      .send({ chain: 'ethereum', env: 'dev' });
+      .send({ chain: 'Solana', env: 'dev' });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('Missing check parameter');
   });
 
-  it('should return 400 if chain is unsupported', async () => {
+  it('should return 400 if check is missing', async () => {
     const res = await request(app)
       .post('/ping')
       .set('x-api-secret', API_SECRET)
-      .send({ chain: 'unsupported', check: true, env: 'dev' });
+      .send({ chain: 'Solana', env: 'dev' });
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/Unsupported chain/);
+    expect(res.body.error).toBe('Missing check parameter');
+  });
+
+  it('should return 400 if check is wrong', async () => {
+    const res = await request(app)
+      .post('/ping')
+      .set('x-api-secret', API_SECRET)
+      .send({ chain: 'Solana', env: 'dev', check: 'not a boolean value' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Missing check parameter');
   });
 });

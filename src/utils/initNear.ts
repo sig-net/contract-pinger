@@ -49,7 +49,8 @@ export const initNearNew = async ({
     nearPrivateKeyMainnet,
     nearPrivateKeyTestnet,
   } = useEnv();
-  const config = {
+
+  const { nearAccount, nearPrivateKey, nearNetworkId } = {
     dev: {
       nearAccount: nearAccountIdTestnet,
       nearPrivateKey: nearPrivateKeyTestnet,
@@ -66,28 +67,50 @@ export const initNearNew = async ({
       nearNetworkId: 'mainnet',
     },
   }[environment];
+
+  if (!nearAccount) {
+    throw new Error(
+      `NEAR account ID for ${environment} environment is missing. Please set the ${
+        environment === 'mainnet'
+          ? 'nearAccountIdMainnet'
+          : 'nearAccountIdTestnet'
+      } environment variable.`
+    );
+  }
+
+  if (!nearPrivateKey) {
+    throw new Error(
+      `NEAR private key for ${environment} environment is missing. Please set the ${
+        environment === 'mainnet'
+          ? 'nearPrivateKeyMainnet'
+          : 'nearPrivateKeyTestnet'
+      } environment variable.`
+    );
+  }
+
   const keyStore = new nearAPI.keyStores.InMemoryKeyStore();
-  const keyPair = nearAPI.KeyPair.fromString(config.nearPrivateKey);
-  await keyStore.setKey(config.nearNetworkId, config.nearAccount, keyPair);
-  const connection = await nearAPI.connect({
-    networkId: config.nearNetworkId,
+  const keyPair = nearAPI.KeyPair.fromString(nearPrivateKey);
+  await keyStore.setKey(nearNetworkId, nearAccount, keyPair);
+  const config = {
+    networkId: nearNetworkId,
     keyStore,
     nodeUrl:
-      config.nearNetworkId === 'mainnet'
+      nearNetworkId === 'mainnet'
         ? 'https://free.rpc.fastnear.com'
         : 'https://test.rpc.fastnear.com',
     helperUrl:
-      config.nearNetworkId === 'mainnet'
+      nearNetworkId === 'mainnet'
         ? 'https://helper.mainnet.near.org'
         : 'https://helper.testnet.near.org',
-  });
-  const account = await connection.account(config.nearAccount);
+  };
+  const connection = await nearAPI.connect(config);
+  const account = await connection.account(nearAccount);
   const chainSigContract = new (
     signetJs as any
   ).chains.near.ChainSignatureContract({
-    networkId: config.nearNetworkId,
+    networkId: nearNetworkId,
     contractId: contractAddress,
-    accountId: config.nearAccount,
+    accountId: nearAccount,
     keypair: keyPair,
   });
   return { connection, account, keyPair, chainSigContract };

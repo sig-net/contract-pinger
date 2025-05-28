@@ -1,6 +1,7 @@
 import { initSolanaNew } from '../utils/initSolana';
 import { getSignArgs } from '../utils/evmTransactions';
 import { constants } from 'signet.js';
+import { Transaction } from '@solana/web3.js';
 
 export const chainName = 'Solana';
 
@@ -51,6 +52,12 @@ export async function execute({
         ],
       }
     );
-    return { instruction };
+    const requestId = chainSigContract.getRequestId(
+      signArgs[0],
+      signArgs[1].sign
+    );
+    const transaction = new Transaction().add(instruction);
+    const hash = await provider.sendAndConfirm(transaction, [requesterKeypair]);
+    return { signatureRequest: { txHash: hash, requestId } };
   }
 }
