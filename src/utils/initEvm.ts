@@ -33,7 +33,7 @@ export const initEthereum = ({
   if (!config.infuraUrl) {
     throw new Error(
       `Infura URL for ${environment} environment is missing. Please set the ${
-        environment === 'mainnet' ? 'mainnetInfuraUrl' : 'sepoliaInfuraUrl'
+        environment === 'mainnet' ? 'ethRpcUrlMainnet' : 'ethRpcUrlSepolia'
       } environment variable.`
     );
   }
