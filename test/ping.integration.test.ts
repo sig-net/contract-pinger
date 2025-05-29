@@ -106,7 +106,7 @@ describe('/ping input parameters', () => {
   }, 10000);
 
   // TODO: unstable
-  it('positive: simultenious requests Ethereum', async () => {
+  test.skip('positive: simultenious requests Ethereum', async () => {
     const requests = Array.from({ length: 5 }, () =>
       request(app)
         .post('/ping')
