@@ -50,6 +50,19 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    env:
+      PORT: 3001
+      NODE_ENV: development
+      SIG_ETH_RPC_URL_SEPOLIA: ${{ secrets.SIG_ETH_RPC_URL_SEPOLIA }}
+      SIG_ETH_RPC_URL_MAINNET: ${{ secrets.SIG_ETH_RPC_URL_MAINNET }}
+      SIG_EVM_SK_1: ${{ secrets.SIG_EVM_SK_1 }}
+      SIG_EVM_SK_2: ${{ secrets.SIG_EVM_SK_2 }}
+      SIG_EVM_SK_3: ${{ secrets.SIG_EVM_SK_3 }}
+      SIG_EVM_SK_4: ${{ secrets.SIG_EVM_SK_4 }}
+      SIG_EVM_SK_5: ${{ secrets.SIG_EVM_SK_5 }}
+      SIG_SOL_RPC_URL_DEV: ${{ secrets.SIG_SOL_RPC_URL_DEV }}
+      SIG_SOL_RPC_URL_MAINNET: ${{ secrets.SIG_SOL_RPC_URL_MAINNET }}
+      SIG_SOL_SK: ${{ secrets.SIG_SOL_SK }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v3
