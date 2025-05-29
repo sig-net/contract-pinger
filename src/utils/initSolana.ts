@@ -10,11 +10,7 @@ export const initSolana = ({
   contractAddress: string;
   environment: 'dev' | 'testnet' | 'mainnet';
 }) => {
-  const {
-    solRpcUrlDevnet,
-    solRpcUrlMainnet,
-    solSk,
-  } = useEnv();
+  const { solRpcUrlDevnet, solRpcUrlMainnet, solSk } = useEnv();
   const config = {
     dev: {
       solanaRpcUrl: solRpcUrlDevnet,

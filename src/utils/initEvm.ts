@@ -11,11 +11,7 @@ export const initEthereum = ({
   contractAddress: string;
   environment: 'dev' | 'testnet' | 'mainnet';
 }) => {
-  const {
-    ethRpcUrlSepolia,
-    ethRpcUrlMainnet,
-    evmSk,
-  } = useEnv();
+  const { ethRpcUrlSepolia, ethRpcUrlMainnet, evmSk } = useEnv();
   const config = {
     dev: {
       chain: sepolia,

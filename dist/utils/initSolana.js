@@ -39,7 +39,7 @@ const anchor = __importStar(require("@coral-xyz/anchor"));
 const signet_js_1 = require("signet.js");
 const useEnv_1 = require("./useEnv");
 const initSolana = ({ contractAddress, environment, }) => {
-    const { solRpcUrlDevnet, solRpcUrlMainnet, solSk, } = (0, useEnv_1.useEnv)();
+    const { solRpcUrlDevnet, solRpcUrlMainnet, solSk } = (0, useEnv_1.useEnv)();
     const config = {
         dev: {
             solanaRpcUrl: solRpcUrlDevnet,

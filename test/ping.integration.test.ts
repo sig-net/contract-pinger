@@ -65,6 +65,64 @@ describe('/ping input parameters', () => {
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('Invalid check parameter: must be boolean');
   });
+
+  it('positive: Solana, dev, no check', async () => {
+    const res = await request(app)
+      .post('/ping')
+      .set('x-api-secret', API_SECRET)
+      .send({ chain: 'Solana', check: false, env: 'dev' });
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('signatureRequest');
+    expect(res.body.signatureRequest).toHaveProperty('txHash');
+    expect(res.body.signatureRequest).toHaveProperty('requestId');
+  }, 10000);
+
+  it('positive: Solana, testnet, no check', async () => {
+    const res = await request(app)
+      .post('/ping')
+      .set('x-api-secret', API_SECRET)
+      .send({ chain: 'Solana', check: false, env: 'testnet' });
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('signatureRequest');
+    expect(res.body.signatureRequest).toHaveProperty('txHash');
+    expect(res.body.signatureRequest).toHaveProperty('requestId');
+  }, 10000);
+
+  it('positive: Ethereum, dev, no check', async () => {
+    const res = await request(app)
+      .post('/ping')
+      .set('x-api-secret', API_SECRET)
+      .send({ chain: 'Ethereum', check: false, env: 'dev' });
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('signatureRequest');
+    expect(res.body.signatureRequest).toHaveProperty('txHash');
+    expect(res.body.signatureRequest).toHaveProperty('requestId');
+  }, 10000);
+
+  it('positive: Ethereum, testnet, no check', async () => {
+    const res = await request(app)
+      .post('/ping')
+      .set('x-api-secret', API_SECRET)
+      .send({ chain: 'Ethereum', check: false, env: 'testnet' });
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('signatureRequest');
+    expect(res.body.signatureRequest).toHaveProperty('txHash');
+    expect(res.body.signatureRequest).toHaveProperty('requestId');
+  }, 10000);
+
+  it('negative: Ethereum, dev, with check (must fail, unsupported)', async () => {
+    const res = await request(app)
+      .post('/ping')
+      .set('x-api-secret', API_SECRET)
+      .send({ chain: 'Ethereum', check: true, env: 'testnet' });
+
+    console.log('Response body:', res.body);
+
+    expect(res.status).toBe(500);
+    expect(res.body.details).toBe(
+      'Ethereum can not be called with check=true due to long finalization time'
+    );
+  }, 10000);
 });
 
 afterAll(done => {

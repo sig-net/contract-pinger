@@ -7,7 +7,7 @@ const chains_1 = require("viem/chains");
 const useEnv_1 = require("./useEnv");
 const signet_js_1 = require("signet.js");
 const initEthereum = ({ contractAddress, environment, }) => {
-    const { ethRpcUrlSepolia, ethRpcUrlMainnet, evmSk, } = (0, useEnv_1.useEnv)();
+    const { ethRpcUrlSepolia, ethRpcUrlMainnet, evmSk } = (0, useEnv_1.useEnv)();
     const config = {
         dev: {
             chain: chains_1.sepolia,
