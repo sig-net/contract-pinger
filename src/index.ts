@@ -73,14 +73,17 @@ app.post(
         check_signature: check,
         environment: env,
       });
-
       res.json(result);
-    } catch (error) {
-      console.error('Ping endpoint error:', error);
-      res.status(500).json({
-        error: `Failed to process ping request`,
-        details: error instanceof Error ? error.message : String(error),
-      });
+    } catch (error: any) {
+      if (error && error.statusCode) {
+        res.status(error.statusCode).json({ error: error.message });
+      } else {
+        console.error('Ping endpoint error:', error);
+        res.status(500).json({
+          error: `Failed to process ping request`,
+          details: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
   }
 );
