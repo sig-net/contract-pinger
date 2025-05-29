@@ -75,10 +75,10 @@ app.post(
       });
       res.json(result);
     } catch (error: any) {
+      console.error('Ping endpoint error:', error);
       if (error && error.statusCode) {
         res.status(error.statusCode).json({ error: error.message });
       } else {
-        console.error('Ping endpoint error:', error);
         res.status(500).json({
           error: `Failed to process ping request`,
           details: error instanceof Error ? error.message : String(error),

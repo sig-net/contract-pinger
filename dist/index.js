@@ -66,10 +66,15 @@ app.post('/ping', async (req, res) => {
     }
     catch (error) {
         console.error('Ping endpoint error:', error);
-        res.status(500).json({
-            error: `Failed to process ping request`,
-            details: error instanceof Error ? error.message : String(error),
-        });
+        if (error && error.statusCode) {
+            res.status(error.statusCode).json({ error: error.message });
+        }
+        else {
+            res.status(500).json({
+                error: `Failed to process ping request`,
+                details: error instanceof Error ? error.message : String(error),
+            });
+        }
     }
 });
 // Global error handler
