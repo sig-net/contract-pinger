@@ -74,5 +74,7 @@ jobs:
           cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install
+      - name: Print env (debug)
+        run: env | grep SIG_ || true
       - name: Run tests
         run: pnpm test
