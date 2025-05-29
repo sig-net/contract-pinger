@@ -28,6 +28,7 @@ app.use(validateSecret);
 app.post('/ping', async (req, res) => {
     try {
         const { chain, check, env } = req.body;
+        console.log('Received ping request:', { chain, check, env });
         const validEnvironments = ['dev', 'testnet', 'mainnet'];
         if (!chain) {
             res.status(400).json({ error: 'Missing chain parameter' });

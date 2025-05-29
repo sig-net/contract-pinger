@@ -88,6 +88,41 @@ describe('/ping input parameters', () => {
     expect(res.body.signatureRequest).toHaveProperty('requestId');
   }, 10000);
 
+  it('positive: simultenious requests Solana', async () => {
+    const requests = Array.from({ length: 10 }, () =>
+      request(app)
+        .post('/ping')
+        .set('x-api-secret', API_SECRET)
+        .send({ chain: 'Solana', check: false, env: 'dev' })
+    );
+
+    const responses = await Promise.all(requests);
+    responses.forEach(res => {
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveProperty('signatureRequest');
+      expect(res.body.signatureRequest).toHaveProperty('txHash');
+      expect(res.body.signatureRequest).toHaveProperty('requestId');
+    });
+  }, 10000);
+
+  // TODO: unstable
+  it('positive: simultenious requests Ethereum', async () => {
+    const requests = Array.from({ length: 5 }, () =>
+      request(app)
+        .post('/ping')
+        .set('x-api-secret', API_SECRET)
+        .send({ chain: 'Ethereum', check: false, env: 'dev' })
+    );
+
+    const responses = await Promise.all(requests);
+    responses.forEach(res => {
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveProperty('signatureRequest');
+      expect(res.body.signatureRequest).toHaveProperty('txHash');
+      expect(res.body.signatureRequest).toHaveProperty('requestId');
+    });
+  }, 10000);
+
   it('positive: Solana, dev, with check', async () => {
     const res = await request(app)
       .post('/ping')
