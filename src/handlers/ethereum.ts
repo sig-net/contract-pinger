@@ -26,7 +26,7 @@ export async function execute({
     environment,
   });
   if (check_signature) {
-    // TOOD: add ability to call with check=true on Ethereum
+    // TODO: add ability to call with check=true on Ethereum
     throw new Error(
       `Ethereum can not be called with check=true due to long finalization time`
     );
