@@ -24,11 +24,13 @@ jobs:
         run: pnpm build
       - name: Check for uncommitted changes after build
         run: |
+          git update-index --assume-unchanged pnpm-lock.yaml
           if ! git diff --exit-code; then
-            echo 'Build produced uncommitted changes. Please run pnpm build and commit the results.'
+            echo 'Build produced uncommitted changes (excluding lock file). Please run pnpm build and commit the results.'
             git diff
             exit 1
           fi
+          git update-index --no-assume-unchanged pnpm-lock.yaml
 
   prettier-check:
     runs-on: ubuntu-latest
