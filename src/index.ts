@@ -27,6 +27,10 @@ const validateSecret = (req: Request, res: Response, next: NextFunction) => {
 
 app.use(validateSecret as express.RequestHandler);
 
+app.get('/', (res: express.Response) => {
+  return res.status(200).json({status: "OK"});
+});
+
 app.post(
   '/ping',
   async (req: express.Request, res: express.Response): Promise<void> => {
