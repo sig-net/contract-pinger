@@ -34,8 +34,12 @@ export class BlockchainHandlerRegistry {
     try {
       const files = fs
         .readdirSync(directory)
-        .filter(file => file !== 'index.ts' && file.endsWith('.ts'));
-
+        .filter(
+          file =>
+            file !== 'index.ts' &&
+            file !== 'index.js' &&
+            (file.endsWith('.ts') || file.endsWith('.js'))
+        );
       files.forEach(file => {
         const filePath = path.join(directory, file);
         try {
