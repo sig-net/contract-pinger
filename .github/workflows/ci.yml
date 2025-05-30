@@ -50,6 +50,7 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    environment: Pinger Test ENV
     env:
       PORT: 3001
       NODE_ENV: development
