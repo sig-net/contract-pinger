@@ -25,7 +25,6 @@ const validateSecret = (req, res, next) => {
     next();
 };
 app.use(validateSecret);
-// healt check
 app.get('/', (req, res) => {
     res.json({
         status: 'ok',
