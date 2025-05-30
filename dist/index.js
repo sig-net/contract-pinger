@@ -25,6 +25,9 @@ const validateSecret = (req, res, next) => {
     next();
 };
 app.use(validateSecret);
+app.get('/', (req, res, next) => {
+    res.status(200).json({ status: 'OK' });
+});
 app.post('/ping', async (req, res) => {
     try {
         const { chain, check, env } = req.body;
