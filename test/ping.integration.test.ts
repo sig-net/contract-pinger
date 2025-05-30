@@ -172,10 +172,13 @@ describe('/ping input parameters', () => {
 
 describe('/ health check', () => {
   const API_SECRET = process.env.API_SECRET || 'default-secret-key';
+
   it('should return a 200 status', async () => {
     const res = await request(app).get('/').set('x-api-secret', API_SECRET);
     expect(res.status).toBe(200);
-    expect(res.body.status).toBe('OK');
+    expect(res.body.status).toBe('ok');
+    expect(res.body.supportedChains).toContain('Solana');
+    expect(res.body.supportedChains).toContain('Ethereum');
   });
 });
 

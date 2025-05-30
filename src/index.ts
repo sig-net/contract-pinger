@@ -27,12 +27,12 @@ const validateSecret = (req: Request, res: Response, next: NextFunction) => {
 
 app.use(validateSecret as express.RequestHandler);
 
-app.get(
-  '/',
-  (req: express.Request, res: express.Response, next: NextFunction) => {
-    res.status(200).json({ status: 'OK' });
-  }
-);
+app.get('/', (req: express.Request, res: express.Response): void => {
+  res.json({
+    status: 'ok',
+    supportedChains: blockchainHandlers.getSupportedChains(),
+  });
+});
 
 app.post(
   '/ping',

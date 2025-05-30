@@ -25,8 +25,12 @@ const validateSecret = (req, res, next) => {
     next();
 };
 app.use(validateSecret);
-app.get('/', (req, res, next) => {
-    res.status(200).json({ status: 'OK' });
+// healt check
+app.get('/', (req, res) => {
+    res.json({
+        status: 'ok',
+        supportedChains: handlers_1.default.getSupportedChains(),
+    });
 });
 app.post('/ping', async (req, res) => {
     try {
