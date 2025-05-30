@@ -170,6 +170,15 @@ describe('/ping input parameters', () => {
   }, 10000);
 });
 
+describe('/ health check', () => {
+  it('should return a 200 status', async () => {
+    const res = await request(app)
+      .get('/')
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('OK');
+  })
+})
+
 afterAll(done => {
   server.close(done);
 });

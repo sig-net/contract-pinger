@@ -7,7 +7,7 @@ on:
       - main
 
 env:
-  IMAGE: "europe-west1-docker.pkg.dev/near-cs-dev/tools/contract-pinger"
+  IMAGE: 'europe-west1-docker.pkg.dev/near-cs-dev/tools/contract-pinger'
   TAG: ${{ github.sha }}
 
 jobs:
@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-        name: "Checkout mpc"
+        name: 'Checkout mpc'
 
       - name: Login to GCP Artifact Registry
         run: echo "$GOOGLE_CREDENTIALS" | docker login -u _json_key --password-stdin https://europe-west1-docker.pkg.dev
@@ -30,4 +30,4 @@ jobs:
         with:
           push: true
           file: ./Dockerfile
-          tags: "${{ env.IMAGE }}:${{ env.TAG }},${{ env.IMAGE }}:latest"
+          tags: '${{ env.IMAGE }}:${{ env.TAG }},${{ env.IMAGE }}:latest'
