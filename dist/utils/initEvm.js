@@ -26,7 +26,7 @@ const initEthereum = ({ contractAddress, environment, }) => {
         },
     }[environment];
     if (!config.infuraUrl) {
-        throw new Error(`Infura URL for ${environment} environment is missing. Please set the ${environment === 'mainnet' ? 'mainnetInfuraUrl' : 'sepoliaInfuraUrl'} environment variable.`);
+        throw new Error(`Infura URL for ${environment} environment is missing. Please set the ${environment === 'mainnet' ? 'ethRpcUrlMainnet' : 'ethRpcUrlSepolia'} environment variable.`);
     }
     if (!config.evmPrivateKey) {
         throw new Error(`EVM private key for ${environment} environment is missing. Please set the ${environment === 'mainnet'
