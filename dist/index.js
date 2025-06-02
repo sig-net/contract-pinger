@@ -27,7 +27,7 @@ const validateSecret = (req, res, next) => {
 app.use(validateSecret);
 app.get('/', (req, res) => {
     res.json({
-        status: 'ok',
+        status: 'OK',
         supportedChains: handlers_1.default.getSupportedChains(),
     });
 });
