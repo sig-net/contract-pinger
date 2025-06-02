@@ -1,0 +1,33 @@
+name: Docker Image
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+
+env:
+  IMAGE: 'europe-west1-docker.pkg.dev/near-cs-dev/tools/contract-pinger'
+  TAG: ${{ github.sha }}
+
+jobs:
+  build:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        name: 'Checkout mpc'
+
+      - name: Login to GCP Artifact Registry
+        run: echo "$GOOGLE_CREDENTIALS" | docker login -u _json_key --password-stdin https://europe-west1-docker.pkg.dev
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.SIG_CREDENTIALS_DEV }}
+
+      - name: Build Docker image and push to Google Artifact Registry
+        if: github.event.pull_request.merged == true
+        id: docker-push-tagged
+        uses: docker/build-push-action@v4
+        with:
+          push: true
+          file: ./Dockerfile
+          tags: '${{ env.IMAGE }}:${{ env.TAG }},${{ env.IMAGE }}:latest'
