@@ -19,6 +19,10 @@ const validateSecret = (
 ) => {
   const requestSecret = req.headers['x-api-secret'] || req.body.secret;
 
+  if (req.method === 'GET' && req.path === '/') {
+    next();
+  }
+
   if (!requestSecret || requestSecret !== API_SECRET) {
     return res.status(401).json({
       error: 'Unauthorized',
