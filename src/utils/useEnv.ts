@@ -1,11 +1,12 @@
+// In-memory rotation index for Ethereum key (module-private)
+let evmKeyIndex = 0;
+
 export const useEnv = () => {
-  const getRotatingKey = () => {
-    const currentTime = new Date().getTime();
-    const keyIndex = (currentTime % 5) + 1;
-    return process.env[
-      `SIG_EVM_SK_${keyIndex}` as keyof NodeJS.ProcessEnv
-    ] as string;
-  };
+  // Always rotate key on each call
+  evmKeyIndex = (evmKeyIndex % 5) + 1;
+  const evmSk = process.env[
+    `SIG_EVM_SK_${evmKeyIndex}` as keyof NodeJS.ProcessEnv
+  ] as string;
 
   return {
     // Server configuration
@@ -15,7 +16,7 @@ export const useEnv = () => {
     // Ethereum
     ethRpcUrlSepolia: process.env.SIG_ETH_RPC_URL_SEPOLIA || '',
     ethRpcUrlMainnet: process.env.SIG_ETH_RPC_URL_MAINNET || '',
-    evmSk: getRotatingKey(),
+    evmSk,
 
     // Solana
     solRpcUrlDevnet: process.env.SIG_SOL_RPC_URL_DEV || '',
