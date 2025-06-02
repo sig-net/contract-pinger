@@ -182,6 +182,56 @@ describe('/ health check', () => {
   });
 });
 
+describe('/eth_balance endpoint', () => {
+  const API_SECRET = process.env.API_SECRET || 'default-secret-key';
+  const validAddress = '0x0000000000000000000000000000000000000000'; // always valid, always 0 balance
+
+  it('should return 400 if address is missing', async () => {
+    const res = await request(app)
+      .post('/eth_balance')
+      .set('x-api-secret', API_SECRET)
+      .send({});
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Missing address/);
+  });
+
+  it('should return 400 if address is invalid', async () => {
+    const res = await request(app)
+      .post('/eth_balance')
+      .set('x-api-secret', API_SECRET)
+      .send({ address: 'notanaddress' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Invalid Ethereum address/);
+  });
+
+  it('should return a balance for a valid address (sepolia)', async () => {
+    const res = await request(app)
+      .post('/eth_balance')
+      .set('x-api-secret', API_SECRET)
+      .send({ address: validAddress });
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('balance');
+    expect(typeof res.body.balance).toBe('string');
+    expect(Number(res.body.balance)).toBeGreaterThanOrEqual(0); // balance should be a number
+    expect(res.body).not.toHaveProperty('error');
+  });
+
+  it('should return a balance for a valid address (mainnet)', async () => {
+    const res = await request(app)
+      .post('/eth_balance')
+      .set('x-api-secret', API_SECRET)
+      .send({ address: validAddress, env: 'mainnet' });
+    // 200 or 500 if no mainnet RPC, but should not be 400
+    expect([200, 500]).toContain(res.status);
+    if (res.status === 200) {
+      expect(res.body).toHaveProperty('balance');
+      expect(typeof res.body.balance).toBe('string');
+      expect(Number(res.body.balance)).toBeGreaterThanOrEqual(0); // balance should be a number
+      expect(res.body).not.toHaveProperty('error');
+    }
+  });
+});
+
 afterAll(done => {
   server.close(done);
 });
