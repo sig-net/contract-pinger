@@ -132,7 +132,7 @@ describe('/ping input parameters', () => {
     expect(res.body).toHaveProperty('signature');
   }, 10000);
 
-  it.only('positive: Ethereum, testnet, no check', async () => {
+  it('positive: Ethereum, testnet, no check', async () => {
     const res = await request(app)
       .post('/ping')
       .set('x-api-secret', API_SECRET)
