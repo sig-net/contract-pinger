@@ -105,7 +105,7 @@ describe('/ping input parameters', () => {
     });
   }, 10000);
 
-  it('positive: simultenious requests Ethereum', async () => {
+  it('positive: simultaneous requests Ethereum', async () => {
     const requests = Array.from({ length: 5 }, () =>
       request(app)
         .post('/ping')
