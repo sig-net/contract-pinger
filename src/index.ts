@@ -33,14 +33,14 @@ const validateSecret = (
   next();
 };
 
+app.use(validateSecret as express.RequestHandler);
+
 app.get('/', (req: express.Request, res: express.Response): void => {
   res.json({
     status: 'OK',
     supportedChains: blockchainHandlers.getSupportedChains(),
   });
 });
-
-app.use(validateSecret as express.RequestHandler);
 
 app.post(
   '/ping',
