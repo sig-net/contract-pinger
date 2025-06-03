@@ -50,7 +50,7 @@ app.use(express_1.default.urlencoded({ extended: true }));
 const validateSecret = (req, res, next) => {
     const requestSecret = req.headers['x-api-secret'] || req.body.secret;
     if (req.method === 'GET' && req.path === '/') {
-        next();
+        return next();
     }
     if (!requestSecret || requestSecret !== API_SECRET) {
         return res.status(401).json({
@@ -60,13 +60,13 @@ const validateSecret = (req, res, next) => {
     }
     next();
 };
-app.use(validateSecret);
 app.get('/', (req, res) => {
     res.json({
         status: 'OK',
         supportedChains: handlers_1.default.getSupportedChains(),
     });
 });
+app.use(validateSecret);
 app.post('/ping', async (req, res) => {
     try {
         const { chain, check, env } = req.body;
