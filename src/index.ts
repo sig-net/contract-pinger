@@ -20,7 +20,7 @@ const validateSecret = (
   const requestSecret = req.headers['x-api-secret'] || req.body.secret;
 
   if (req.method === 'GET' && req.path === '/') {
-    next();
+    return next();
   }
 
   if (!requestSecret || requestSecret !== API_SECRET) {
@@ -33,14 +33,14 @@ const validateSecret = (
   next();
 };
 
-app.use(validateSecret as express.RequestHandler);
-
 app.get('/', (req: express.Request, res: express.Response): void => {
   res.json({
     status: 'OK',
     supportedChains: blockchainHandlers.getSupportedChains(),
   });
 });
+
+app.use(validateSecret as express.RequestHandler);
 
 app.post(
   '/ping',
