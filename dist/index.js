@@ -60,13 +60,13 @@ const validateSecret = (req, res, next) => {
     }
     next();
 };
+app.use(validateSecret);
 app.get('/', (req, res) => {
     res.json({
         status: 'OK',
         supportedChains: handlers_1.default.getSupportedChains(),
     });
 });
-app.use(validateSecret);
 app.post('/ping', async (req, res) => {
     try {
         const { chain, check, env } = req.body;

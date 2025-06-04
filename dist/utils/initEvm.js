@@ -11,39 +11,37 @@ const initEthereum = ({ contractAddress, environment, }) => {
     const config = {
         dev: {
             chain: chains_1.sepolia,
-            evmPrivateKey: evmSk,
-            infuraUrl: ethRpcUrlSepolia,
+            evmSk,
+            ethRpcUrlSepolia,
         },
         testnet: {
             chain: chains_1.sepolia,
-            evmPrivateKey: evmSk,
-            infuraUrl: ethRpcUrlSepolia,
+            evmSk,
+            ethRpcUrlSepolia,
         },
         mainnet: {
             chain: chains_1.mainnet,
-            evmPrivateKey: evmSk,
-            infuraUrl: ethRpcUrlMainnet,
+            evmSk,
+            ethRpcUrlMainnet,
         },
     }[environment];
-    if (!config.infuraUrl) {
-        throw new Error(`Infura URL for ${environment} environment is missing. Please set the ${environment === 'mainnet' ? 'ethRpcUrlMainnet' : 'ethRpcUrlSepolia'} environment variable.`);
+    if (!config.ethRpcUrlSepolia) {
+        throw new Error(`Ethereum RPC URL for ${environment} environment is missing. Please set the ${environment === 'mainnet' ? 'ethRpcUrlMainnet' : 'ethRpcUrlSepolia'} environment variable.`);
     }
-    if (!config.evmPrivateKey) {
-        throw new Error(`EVM private key for ${environment} environment is missing. Please set the ${environment === 'mainnet'
-            ? 'evmPrivateKeyMainnet'
-            : 'evmPrivateKeySepolia'} environment variable.`);
+    if (!config.evmSk) {
+        throw new Error(`EVM secret key for ${environment} environment is missing. Please set the evmSk environment variable.`);
     }
     const publicClient = (0, viem_1.createPublicClient)({
         chain: config.chain,
-        transport: (0, viem_1.http)(config.infuraUrl),
+        transport: (0, viem_1.http)(config.ethRpcUrlMainnet),
     });
-    const account = (0, accounts_1.privateKeyToAccount)((config.evmPrivateKey.startsWith('0x')
-        ? config.evmPrivateKey
-        : `0x${config.evmPrivateKey}`));
+    const account = (0, accounts_1.privateKeyToAccount)((config.evmSk.startsWith('0x')
+        ? config.evmSk
+        : `0x${config.evmSk}`));
     const walletClient = (0, viem_1.createWalletClient)({
         account,
         chain: config.chain,
-        transport: (0, viem_1.http)(config.infuraUrl),
+        transport: (0, viem_1.http)(config.ethRpcUrlMainnet),
     });
     const chainSigContract = new signet_js_1.contracts.evm.ChainSignatureContract({
         publicClient,
