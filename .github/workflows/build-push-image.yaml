@@ -7,7 +7,7 @@ on:
       - main
 
 env:
-  IMAGE: 'europe-west1-docker.pkg.dev/near-cs-dev/tools/contract-pinger'
+  IMAGE: 'europe-west1-docker.pkg.dev/near-cs-dev/multichain-public/contract-pinger'
   TAG: ${{ github.sha }}
 
 jobs:
