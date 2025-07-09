@@ -21,8 +21,8 @@ importers:
         specifier: ^4.21.2
         version: 4.21.2
       signet.js:
-        specifier: 0.0.12-beta.3
-        version: 0.0.12-beta.3(bufferutil@4.0.9)(typescript@5.8.3)(utf-8-validate@5.0.10)
+        specifier: 0.0.12-beta.5
+        version: 0.0.12-beta.5(bufferutil@4.0.9)(typescript@5.8.3)(utf-8-validate@5.0.10)
       viem:
         specifier: ^2.23.5
         version: 2.30.5(bufferutil@4.0.9)(typescript@5.8.3)(utf-8-validate@5.0.10)
@@ -235,8 +235,8 @@ packages:
   '@bcoe/v8-coverage@0.2.3':
     resolution: {integrity: sha512-0hYQ8SB4Db5zvZB4axdMHGwEaQjkZzFjQiN9LVYvIFB2nSUHW9tYpxWriPrWDASIxiaXax83REcLxuSdnGPZtw==}
 
-  '@chain-registry/types@0.50.141':
-    resolution: {integrity: sha512-o3pu3u2Coa4J7q6+7lxp0HgzVwinkdoBmlR4tTGzVlFxPcQYTMfyIcsnjbVuuWuWxNzg+9RLE0CUiK2jspEYOA==}
+  '@chain-registry/types@0.50.169':
+    resolution: {integrity: sha512-9hUxTC5Qp+yVvw/EqPTBFaL/BENZoOUB1uT9QqhZ+GKkXu5aE+Xi+rNtQA6F9G9DNPsx/Ent3mo42VZg753baw==}
 
   '@confio/ics23@0.6.8':
     resolution: {integrity: sha512-wB6uo+3A50m0sW/EWcU64xpV/8wShZ6bMTa7pF8eYsTrSkQA7oLUIJcs/wb8g4y2Oyq701BaGiO6n/ak5WXO1w==}
@@ -486,6 +486,9 @@ packages:
   '@scure/base@1.2.5':
     resolution: {integrity: sha512-9rE6EOVeIQzt5TSu4v+K523F8u6DhBsoZWPGKlnCshhlDhy0kJzUX4V+tr2dWmzF1GdekvThABoEQBGBQI7xZw==}
 
+  '@scure/base@1.2.6':
+    resolution: {integrity: sha512-g/nm5FgUa//MCj1gV09zTJTaM6KBAHqLN907YVQqf7zC49+DcO4B1so4ZX07Ef10Twr6nuqYEH9GEggFXA4Fmg==}
+
   '@scure/bip32@1.7.0':
     resolution: {integrity: sha512-E4FFX/N3f4B80AKWp5dP6ow+flD1LQZo/w8UnLGYZO674jS6YnYeepycOOksv+vLPSpgN35wgKgy+ybfTb2SMw==}
 
@@ -707,8 +710,8 @@ packages:
   asynckit@0.4.0:
     resolution: {integrity: sha512-Oei9OH4tRh0YqU3GxhX79dM/mwVgvbZJaSNaRk+bshkj0S5cfHcgYakreBjrHwatXKbz+IoIdYLxrKim2MjW0Q==}
 
-  axios@1.9.0:
-    resolution: {integrity: sha512-re4CqKTJaURpzbLHtIi6XpDv20/CnpXOtjRY5/CU32L8gU8ek9UIivcfvSWvmKEngmVbrUtPpdDwWDWL7DNHvg==}
+  axios@1.10.0:
+    resolution: {integrity: sha512-/1xYAC4MP/HEG+3duIhFr4ZQXR4sQXOIe+o6sdqzeykGLx6Upp/1p8MHqhINOvGeP7xyNHe7tsiJByc4SSVUxw==}
 
   babel-jest@29.7.0:
     resolution: {integrity: sha512-BrvGY3xZSwEcCzKvKsCi2GgHqDqsYkOP4/by5xCgIwGXQxIEh+8ew3gmrE1y7XRR6LHZIj6yLYnUi/mm2KXKBg==}
@@ -862,8 +865,8 @@ packages:
   caniuse-lite@1.0.30001720:
     resolution: {integrity: sha512-Ec/2yV2nNPwb4DnTANEV99ZWwm3ZWfdlfkQbWSDDt+PsXEVYwlhPH8tdMaPunYTKKmz7AnHi2oNEi1GcmKCD8g==}
 
-  chain-registry@1.69.228:
-    resolution: {integrity: sha512-BodPOq972Qux8jjZWrDrzppkfDvYhZmQBYnuImMUqWrpuiHto/VfCr9Bm5Q/F2n84B7X8PP60FH6UJJ0fHdOVQ==}
+  chain-registry@1.69.270:
+    resolution: {integrity: sha512-/mRsNETyAQucEaV5MysHJLSBMl+bfvsEtWIVIVDNq/HzEKmmYK+2KXpmmTeHiQaLatTJ2qBDSKnyR3FwEdnbkw==}
 
   chalk@4.1.2:
     resolution: {integrity: sha512-oKnbhFyRIXpUuez8iBMmyEa4nbj4IOQyuhc/wy9kY7/WVPcwIO9VA668Pu8RkO7+0G76SLROeyw9CpQ061i4mA==}
@@ -1190,6 +1193,10 @@ packages:
 
   form-data@4.0.2:
     resolution: {integrity: sha512-hGfm/slu0ZabnNt4oaRZ6uREyfCj6P4fT/n6A1rGV+Z0VdGXjfOhVUpkn6qVQONHGIFwmveGXyDs75+nr6FM8w==}
+    engines: {node: '>= 6'}
+
+  form-data@4.0.3:
+    resolution: {integrity: sha512-qsITQPfmvMOSAdeyZ+12I1c+CKSstAFAwu+97zrnWAbIr5u8wfsExUzCesVLC8NgHuRUqNN4Zy6UPWUTRGslcA==}
     engines: {node: '>= 6'}
 
   formidable@3.5.4:
@@ -2002,8 +2009,8 @@ packages:
   signal-exit@3.0.7:
     resolution: {integrity: sha512-wnD2ZE+l+SPC/uoS0vXeE9L1+0wuaMqKlfz9AMUo38JsyLSBWSFcHR1Rri62LZc12vLr1gb3jl7iwQhgwpAbGQ==}
 
-  signet.js@0.0.12-beta.3:
-    resolution: {integrity: sha512-v9pySnd2doxGIuvh5Mrx3z+n+m63dpM/TEQ09Uae+3CfAb7tNCyikseQZzpNjWQExFo0IZ2b1VvNTkfjZv7viw==}
+  signet.js@0.0.12-beta.5:
+    resolution: {integrity: sha512-sceh0XtPVNaRIVt1fY56hFAuVC4ITu+xkPRqgxrmfEO+jb6BmRj7V9WfoIe7n1pSmthvw9ebw8AmJXqjgJpWeA==}
 
   simple-update-notifier@2.0.0:
     resolution: {integrity: sha512-a2B9Y0KlNXl9u/vsW6sTIu9vGEpfKu2wRV6l1H3XEas/0gUIzGzBoP/IouTcUQbm9JWZLH3COxyn03TYlFax6w==}
@@ -2527,7 +2534,7 @@ snapshots:
 
   '@bcoe/v8-coverage@0.2.3': {}
 
-  '@chain-registry/types@0.50.141': {}
+  '@chain-registry/types@0.50.169': {}
 
   '@confio/ics23@0.6.8':
     dependencies:
@@ -2644,7 +2651,7 @@ snapshots:
       '@cosmjs/socket': 0.32.4(bufferutil@4.0.9)(utf-8-validate@5.0.10)
       '@cosmjs/stream': 0.32.4
       '@cosmjs/utils': 0.32.4
-      axios: 1.9.0
+      axios: 1.10.0
       readonly-date: 1.0.0
       xstream: 11.14.0
     transitivePeerDependencies:
@@ -2925,7 +2932,7 @@ snapshots:
   '@near-js/utils@1.1.0':
     dependencies:
       '@near-js/types': 0.3.1
-      '@scure/base': 1.2.5
+      '@scure/base': 1.2.6
       depd: 2.0.0
       mustache: 4.0.0
 
@@ -2995,6 +3002,8 @@ snapshots:
   '@protobufjs/utf8@1.1.0': {}
 
   '@scure/base@1.2.5': {}
+
+  '@scure/base@1.2.6': {}
 
   '@scure/bip32@1.7.0':
     dependencies:
@@ -3248,10 +3257,10 @@ snapshots:
 
   asynckit@0.4.0: {}
 
-  axios@1.9.0:
+  axios@1.10.0:
     dependencies:
       follow-redirects: 1.15.9
-      form-data: 4.0.2
+      form-data: 4.0.3
       proxy-from-env: 1.1.0
     transitivePeerDependencies:
       - debug
@@ -3450,9 +3459,9 @@ snapshots:
 
   caniuse-lite@1.0.30001720: {}
 
-  chain-registry@1.69.228:
+  chain-registry@1.69.270:
     dependencies:
-      '@chain-registry/types': 0.50.141
+      '@chain-registry/types': 0.50.169
 
   chalk@4.1.2:
     dependencies:
@@ -3780,6 +3789,14 @@ snapshots:
       asynckit: 0.4.0
       combined-stream: 1.0.8
       es-set-tostringtag: 2.1.0
+      mime-types: 2.1.35
+
+  form-data@4.0.3:
+    dependencies:
+      asynckit: 0.4.0
+      combined-stream: 1.0.8
+      es-set-tostringtag: 2.1.0
+      hasown: 2.0.2
       mime-types: 2.1.35
 
   formidable@3.5.4:
@@ -4783,7 +4800,7 @@ snapshots:
 
   signal-exit@3.0.7: {}
 
-  signet.js@0.0.12-beta.3(bufferutil@4.0.9)(typescript@5.8.3)(utf-8-validate@5.0.10):
+  signet.js@0.0.12-beta.5(bufferutil@4.0.9)(typescript@5.8.3)(utf-8-validate@5.0.10):
     dependencies:
       '@coral-xyz/anchor': 0.31.1(bufferutil@4.0.9)(typescript@5.8.3)(utf-8-validate@5.0.10)
       '@cosmjs/amino': 0.32.4
@@ -4798,13 +4815,13 @@ snapshots:
       '@near-js/transactions': 1.3.3
       '@near-js/types': 0.3.1
       '@near-wallet-selector/core': 8.10.2(near-api-js@5.1.1)
-      '@scure/base': 1.2.5
+      '@scure/base': 1.2.6
       '@solana/web3.js': 1.98.2(bufferutil@4.0.9)(typescript@5.8.3)(utf-8-validate@5.0.10)
       bech32: 2.0.0
       bitcoinjs-lib: 6.1.7
       bn.js: 5.2.2
       bs58: 6.0.0
-      chain-registry: 1.69.228
+      chain-registry: 1.69.270
       coinselect: 3.1.13
       cosmjs-types: 0.9.0
       elliptic: 6.6.1
