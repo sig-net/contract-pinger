@@ -21,8 +21,8 @@ importers:
         specifier: ^4.21.2
         version: 4.21.2
       signet.js:
-        specifier: 0.0.12-beta.5
-        version: 0.0.12-beta.5(bufferutil@4.0.9)(typescript@5.8.3)(utf-8-validate@5.0.10)
+        specifier: 0.0.12-beta.7
+        version: 0.0.12-beta.7(bufferutil@4.0.9)(typescript@5.8.3)(utf-8-validate@5.0.10)
       viem:
         specifier: ^2.23.5
         version: 2.30.5(bufferutil@4.0.9)(typescript@5.8.3)(utf-8-validate@5.0.10)
@@ -235,8 +235,8 @@ packages:
   '@bcoe/v8-coverage@0.2.3':
     resolution: {integrity: sha512-0hYQ8SB4Db5zvZB4axdMHGwEaQjkZzFjQiN9LVYvIFB2nSUHW9tYpxWriPrWDASIxiaXax83REcLxuSdnGPZtw==}
 
-  '@chain-registry/types@0.50.169':
-    resolution: {integrity: sha512-9hUxTC5Qp+yVvw/EqPTBFaL/BENZoOUB1uT9QqhZ+GKkXu5aE+Xi+rNtQA6F9G9DNPsx/Ent3mo42VZg753baw==}
+  '@chain-registry/types@0.50.170':
+    resolution: {integrity: sha512-D0Y7ci85R5ZbhSDEpnG0HbpoFrtZI88tnlNJp+SUCfRBn5XTZWYW+mbL1sNpLMWGMzxxlpwR1P31HnNFv5c+oQ==}
 
   '@confio/ics23@0.6.8':
     resolution: {integrity: sha512-wB6uo+3A50m0sW/EWcU64xpV/8wShZ6bMTa7pF8eYsTrSkQA7oLUIJcs/wb8g4y2Oyq701BaGiO6n/ak5WXO1w==}
@@ -865,8 +865,8 @@ packages:
   caniuse-lite@1.0.30001720:
     resolution: {integrity: sha512-Ec/2yV2nNPwb4DnTANEV99ZWwm3ZWfdlfkQbWSDDt+PsXEVYwlhPH8tdMaPunYTKKmz7AnHi2oNEi1GcmKCD8g==}
 
-  chain-registry@1.69.270:
-    resolution: {integrity: sha512-/mRsNETyAQucEaV5MysHJLSBMl+bfvsEtWIVIVDNq/HzEKmmYK+2KXpmmTeHiQaLatTJ2qBDSKnyR3FwEdnbkw==}
+  chain-registry@1.69.272:
+    resolution: {integrity: sha512-1KWj+lg556OmuKoC9i2P4JwZ1DN3ebn4Wpm2U5rnP4/QiIWvttylm4pOL8gjVDSsOPuJuUD68kd8y80xT817aw==}
 
   chalk@4.1.2:
     resolution: {integrity: sha512-oKnbhFyRIXpUuez8iBMmyEa4nbj4IOQyuhc/wy9kY7/WVPcwIO9VA668Pu8RkO7+0G76SLROeyw9CpQ061i4mA==}
@@ -2009,8 +2009,8 @@ packages:
   signal-exit@3.0.7:
     resolution: {integrity: sha512-wnD2ZE+l+SPC/uoS0vXeE9L1+0wuaMqKlfz9AMUo38JsyLSBWSFcHR1Rri62LZc12vLr1gb3jl7iwQhgwpAbGQ==}
 
-  signet.js@0.0.12-beta.5:
-    resolution: {integrity: sha512-sceh0XtPVNaRIVt1fY56hFAuVC4ITu+xkPRqgxrmfEO+jb6BmRj7V9WfoIe7n1pSmthvw9ebw8AmJXqjgJpWeA==}
+  signet.js@0.0.12-beta.7:
+    resolution: {integrity: sha512-vvfjaoGps0HjUA+a/keeFEzoX0S51vYoZ2805+SxH9bqPPLVTyy1rynLoYaPYis1+sNSaC5EqFO+2KMpuD4+cg==}
 
   simple-update-notifier@2.0.0:
     resolution: {integrity: sha512-a2B9Y0KlNXl9u/vsW6sTIu9vGEpfKu2wRV6l1H3XEas/0gUIzGzBoP/IouTcUQbm9JWZLH3COxyn03TYlFax6w==}
@@ -2534,7 +2534,7 @@ snapshots:
 
   '@bcoe/v8-coverage@0.2.3': {}
 
-  '@chain-registry/types@0.50.169': {}
+  '@chain-registry/types@0.50.170': {}
 
   '@confio/ics23@0.6.8':
     dependencies:
@@ -3459,9 +3459,9 @@ snapshots:
 
   caniuse-lite@1.0.30001720: {}
 
-  chain-registry@1.69.270:
+  chain-registry@1.69.272:
     dependencies:
-      '@chain-registry/types': 0.50.169
+      '@chain-registry/types': 0.50.170
 
   chalk@4.1.2:
     dependencies:
@@ -4800,7 +4800,7 @@ snapshots:
 
   signal-exit@3.0.7: {}
 
-  signet.js@0.0.12-beta.5(bufferutil@4.0.9)(typescript@5.8.3)(utf-8-validate@5.0.10):
+  signet.js@0.0.12-beta.7(bufferutil@4.0.9)(typescript@5.8.3)(utf-8-validate@5.0.10):
     dependencies:
       '@coral-xyz/anchor': 0.31.1(bufferutil@4.0.9)(typescript@5.8.3)(utf-8-validate@5.0.10)
       '@cosmjs/amino': 0.32.4
@@ -4821,7 +4821,7 @@ snapshots:
       bitcoinjs-lib: 6.1.7
       bn.js: 5.2.2
       bs58: 6.0.0
-      chain-registry: 1.69.270
+      chain-registry: 1.69.272
       coinselect: 3.1.13
       cosmjs-types: 0.9.0
       elliptic: 6.6.1

@@ -122,11 +122,21 @@ describe('/ping input parameters', () => {
     });
   }, 10000);
 
-  it('positive: Solana, dev, with check', async () => {
+  it.skip('positive: Solana, dev, with check', async () => {
     const res = await request(app)
       .post('/ping')
       .set('x-api-secret', API_SECRET)
       .send({ chain: 'Solana', check: true, env: 'dev' });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('signature');
+  }, 10000);
+
+  it('positive: Solana, testnet, with check', async () => {
+    const res = await request(app)
+      .post('/ping')
+      .set('x-api-secret', API_SECRET)
+      .send({ chain: 'Solana', check: true, env: 'testnet' });
 
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('signature');
