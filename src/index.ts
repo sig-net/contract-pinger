@@ -36,6 +36,7 @@ const validateSecret = (
 app.use(validateSecret as express.RequestHandler);
 
 app.get('/', (req: express.Request, res: express.Response): void => {
+  console.log('GET / - Health check accessed');
   res.json({
     status: 'OK',
     supportedChains: blockchainHandlers.getSupportedChains(),
@@ -53,11 +54,13 @@ app.post(
       const validEnvironments = ['dev', 'testnet', 'mainnet'];
 
       if (!chain) {
+        console.log('ping error: Missing chain parameter');
         res.status(400).json({ error: 'Missing chain parameter' });
         return;
       }
 
       if (!blockchainHandlers.supports(chain)) {
+        console.log('ping error: Unsupported chain:', chain);
         res.status(400).json({
           error: `Unsupported chain: ${chain}`,
           supportedChains: blockchainHandlers.getSupportedChains(),
@@ -66,11 +69,16 @@ app.post(
       }
 
       if (check === undefined) {
+        console.log('ping error: Missing check parameter');
         res.status(400).json({ error: 'Missing check parameter' });
         return;
       }
 
       if (typeof check !== 'boolean') {
+        console.log(
+          'ping error: Invalid check parameter (not boolean):',
+          check
+        );
         res
           .status(400)
           .json({ error: 'Invalid check parameter: must be boolean' });
@@ -78,6 +86,7 @@ app.post(
       }
 
       if (!env || !validEnvironments.includes(env)) {
+        console.log('ping error: Invalid environment parameter:', env);
         res.status(400).json({
           error: 'Invalid or missing environment parameter',
           validEnvironments,
@@ -90,9 +99,10 @@ app.post(
         check_signature: check,
         environment: env,
       });
+      console.log('ping success: Request completed for chain:', chain, 'Result:', result);
       res.json(result);
     } catch (error: any) {
-      console.error('Ping endpoint error:', error);
+      console.error('ping endpoint error:', error);
       if (error && error.statusCode) {
         res.status(error.statusCode).json({ error: error.message });
       } else {
@@ -111,11 +121,19 @@ app.post(
     try {
       const address = req.body.address as string;
       const env = (req.body.env as string)?.toLowerCase();
+
+      console.log('Received eth_balance request:', { address, env });
+
       if (!address) {
+        console.log('eth_balance error: Missing address parameter');
         res.status(400).json({ error: 'Missing address parameter' });
         return;
       }
       if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
+        console.log(
+          'eth_balance error: Invalid Ethereum address provided:',
+          address
+        );
         res.status(400).json({ error: 'Invalid Ethereum address format' });
         return;
       }
@@ -131,6 +149,10 @@ app.post(
         chain = sepolia;
       }
       if (!ethRpcUrl) {
+        console.log(
+          'eth_balance error: Missing Ethereum RPC URL for environment:',
+          env
+        );
         res
           .status(500)
           .json({ error: 'Missing Ethereum RPC URL for selected environment' });
@@ -143,8 +165,10 @@ app.post(
       const balance = await publicClient.getBalance({
         address: address as `0x${string}`,
       });
+      console.log('eth_balance success: Balance retrieved for address:', address, 'Balance:', balance.toString());
       res.json({ balance: balance.toString() });
     } catch (error: any) {
+      console.error('eth_balance endpoint error:', error);
       res.status(500).json({ error: error.message || String(error) });
     }
   }
