@@ -99,7 +99,15 @@ app.post(
         check_signature: check,
         environment: env,
       });
-      console.log('ping success: Request completed for chain:', chain, 'Result:', result);
+      console.log(
+        'ping success: Request completed for chain:',
+        chain,
+        'Result summary:',
+        {
+          success: result?.success,
+          message: result?.message,
+        }
+      );
       res.json(result);
     } catch (error: any) {
       console.error('ping endpoint error:', error);
@@ -165,7 +173,12 @@ app.post(
       const balance = await publicClient.getBalance({
         address: address as `0x${string}`,
       });
-      console.log('eth_balance success: Balance retrieved for address:', address, 'Balance:', balance.toString());
+      console.log(
+        'eth_balance success: Balance retrieved for address:',
+        address,
+        'Balance:',
+        balance.toString()
+      );
       res.json({ balance: balance.toString() });
     } catch (error: any) {
       console.error('eth_balance endpoint error:', error);

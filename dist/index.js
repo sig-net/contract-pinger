@@ -111,7 +111,10 @@ app.post('/ping', async (req, res) => {
             check_signature: check,
             environment: env,
         });
-        console.log('ping success: Request completed for chain:', chain, 'Result:', result);
+        console.log('ping success: Request completed for chain:', chain, 'Result summary:', {
+            success: result?.success,
+            message: result?.message,
+        });
         res.json(result);
     }
     catch (error) {
