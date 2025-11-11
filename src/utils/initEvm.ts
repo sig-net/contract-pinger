@@ -15,30 +15,29 @@ export const initEthereum = ({
   const config = {
     dev: {
       chain: sepolia,
-      evmSk,
-      ethRpcUrlSepolia,
+      rpcUrl: ethRpcUrlSepolia,
     },
     testnet: {
       chain: sepolia,
-      evmSk,
-      ethRpcUrlSepolia,
+      rpcUrl: ethRpcUrlSepolia,
     },
     mainnet: {
       chain: mainnet,
-      evmSk,
-      ethRpcUrlMainnet,
+      rpcUrl: ethRpcUrlMainnet,
     },
   }[environment];
 
-  if (!config.ethRpcUrlSepolia) {
+  if (!config.rpcUrl) {
     throw new Error(
-      `Ethereum RPC URL for ${environment} environment is missing. Please set the ${
-        environment === 'mainnet' ? 'ethRpcUrlMainnet' : 'ethRpcUrlSepolia'
-      } environment variable.`
+      `Ethereum RPC URL for ${environment} environment is missing. Please set ${
+        environment === 'mainnet'
+          ? 'SIG_ETH_RPC_URL_MAINNET'
+          : 'SIG_ETH_RPC_URL_SEPOLIA'
+      } in your environment.`
     );
   }
 
-  if (!config.evmSk) {
+  if (!evmSk) {
     throw new Error(
       `EVM secret key for ${environment} environment is missing. Please set the evmSk environment variable.`
     );
@@ -46,17 +45,15 @@ export const initEthereum = ({
 
   const publicClient = createPublicClient({
     chain: config.chain,
-    transport: http(config.ethRpcUrlMainnet),
+    transport: http(config.rpcUrl),
   });
   const account = privateKeyToAccount(
-    (config.evmSk.startsWith('0x')
-      ? config.evmSk
-      : `0x${config.evmSk}`) as `0x${string}`
+    (evmSk.startsWith('0x') ? evmSk : `0x${evmSk}`) as `0x${string}`
   );
   const walletClient = createWalletClient({
     account,
     chain: config.chain,
-    transport: http(config.ethRpcUrlMainnet),
+    transport: http(config.rpcUrl),
   });
   const chainSigContract = new contracts.evm.ChainSignatureContract({
     publicClient,

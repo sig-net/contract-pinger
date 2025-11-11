@@ -37,8 +37,10 @@ export const initSolana = ({
   const chainSigContract = new contracts.solana.ChainSignatureContract({
     provider,
     programId: contractAddress,
-    rootPublicKey: '' as `secp256k1:${string}`,
-    requesterAddress: requesterKeypair.publicKey.toString(),
+    config: {
+      rootPublicKey: '' as `secp256k1:${string}`,
+      requesterAddress: requesterKeypair.publicKey.toString(),
+    },
   });
   return { chainSigContract, provider, requesterKeypair };
 };
