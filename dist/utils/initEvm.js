@@ -11,37 +11,34 @@ const initEthereum = ({ contractAddress, environment, }) => {
     const config = {
         dev: {
             chain: chains_1.sepolia,
-            evmSk,
-            ethRpcUrlSepolia,
+            rpcUrl: ethRpcUrlSepolia,
         },
         testnet: {
             chain: chains_1.sepolia,
-            evmSk,
-            ethRpcUrlSepolia,
+            rpcUrl: ethRpcUrlSepolia,
         },
         mainnet: {
             chain: chains_1.mainnet,
-            evmSk,
-            ethRpcUrlMainnet,
+            rpcUrl: ethRpcUrlMainnet,
         },
     }[environment];
-    if (!config.ethRpcUrlSepolia) {
-        throw new Error(`Ethereum RPC URL for ${environment} environment is missing. Please set the ${environment === 'mainnet' ? 'ethRpcUrlMainnet' : 'ethRpcUrlSepolia'} environment variable.`);
+    if (!config.rpcUrl) {
+        throw new Error(`Ethereum RPC URL for ${environment} environment is missing. Please set ${environment === 'mainnet'
+            ? 'SIG_ETH_RPC_URL_MAINNET'
+            : 'SIG_ETH_RPC_URL_SEPOLIA'} in your environment.`);
     }
-    if (!config.evmSk) {
+    if (!evmSk) {
         throw new Error(`EVM secret key for ${environment} environment is missing. Please set the evmSk environment variable.`);
     }
     const publicClient = (0, viem_1.createPublicClient)({
         chain: config.chain,
-        transport: (0, viem_1.http)(config.ethRpcUrlMainnet),
+        transport: (0, viem_1.http)(config.rpcUrl),
     });
-    const account = (0, accounts_1.privateKeyToAccount)((config.evmSk.startsWith('0x')
-        ? config.evmSk
-        : `0x${config.evmSk}`));
+    const account = (0, accounts_1.privateKeyToAccount)((evmSk.startsWith('0x') ? evmSk : `0x${evmSk}`));
     const walletClient = (0, viem_1.createWalletClient)({
         account,
         chain: config.chain,
-        transport: (0, viem_1.http)(config.ethRpcUrlMainnet),
+        transport: (0, viem_1.http)(config.rpcUrl),
     });
     const chainSigContract = new signet_js_1.contracts.evm.ChainSignatureContract({
         publicClient,

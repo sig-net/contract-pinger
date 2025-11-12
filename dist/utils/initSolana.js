@@ -66,8 +66,10 @@ const initSolana = ({ contractAddress, environment, }) => {
     const chainSigContract = new signet_js_1.contracts.solana.ChainSignatureContract({
         provider,
         programId: contractAddress,
-        rootPublicKey: '',
-        requesterAddress: requesterKeypair.publicKey.toString(),
+        config: {
+            rootPublicKey: '',
+            requesterAddress: requesterKeypair.publicKey.toString(),
+        },
     });
     return { chainSigContract, provider, requesterKeypair };
 };

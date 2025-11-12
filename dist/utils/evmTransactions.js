@@ -6,7 +6,7 @@ const getSignArgs = () => {
         .fill(0)
         .map(() => Math.floor(Math.random() * 256)));
     return [
-        { payload, path: '', key_version: 0 },
+        { payload, path: '', key_version: 1 },
         { sign: { algo: '', dest: '', params: '' } },
     ];
 };
