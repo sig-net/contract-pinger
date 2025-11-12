@@ -1,4 +1,4 @@
-import { Connection, Keypair, PublicKey } from '@solana/web3.js';
+import { Connection, Keypair } from '@solana/web3.js';
 import * as anchor from '@coral-xyz/anchor';
 import { contracts } from 'signet.js';
 import { useEnv } from './useEnv';

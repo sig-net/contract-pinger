@@ -88,7 +88,7 @@ describe('/ping input parameters', () => {
     expect(res.body.signatureRequest).toHaveProperty('requestId');
   }, 10000);
 
-  it('positive: simultenious requests Solana', async () => {
+  it('positive: simultaneous requests Solana', async () => {
     const requests = Array.from({ length: 10 }, () =>
       request(app)
         .post('/ping')
@@ -122,7 +122,7 @@ describe('/ping input parameters', () => {
     });
   }, 10000);
 
-  it.skip('positive: Solana, dev, with check', async () => {
+  it('positive: Solana, dev, with check', async () => {
     const res = await request(app)
       .post('/ping')
       .set('x-api-secret', API_SECRET)
@@ -132,7 +132,7 @@ describe('/ping input parameters', () => {
     expect(res.body).toHaveProperty('signature');
   }, 10000);
 
-  it('positive: Solana, testnet, with check', async () => {
+  it.skip('positive: Solana, testnet, with check', async () => {
     const res = await request(app)
       .post('/ping')
       .set('x-api-secret', API_SECRET)

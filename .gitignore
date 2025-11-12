@@ -1,5 +1,4 @@
 node_modules/
-dist/
 coverage/
 .pnpm/
 .DS_Store
@@ -8,3 +7,4 @@ coverage/
 .env.local
 .env.*
 !.env.example
+.pnpm-store/
