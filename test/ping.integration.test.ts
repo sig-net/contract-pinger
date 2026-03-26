@@ -1,11 +1,6 @@
 import request from 'supertest';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 
-// Must be set before importing src/index to avoid process.exit
-if (!process.env.API_SECRET) {
-  process.env.API_SECRET = 'test-secret-key';
-}
-
 import { app } from '../src/index';
 import type { Server } from 'http';
 
