@@ -52,10 +52,10 @@ exports.app = app;
 app.use(express_1.default.json());
 app.use(express_1.default.urlencoded({ extended: true }));
 const validateSecret = (req, res, next) => {
-    const requestSecret = req.headers['x-api-secret'] || req.body.secret;
     if (req.method === 'GET' && req.path === '/') {
         return next();
     }
+    const requestSecret = req.headers['x-api-secret'] || req.body?.secret;
     if (!requestSecret || requestSecret !== API_SECRET) {
         return res.status(401).json({
             error: 'Unauthorized',

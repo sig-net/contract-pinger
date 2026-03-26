@@ -1,4 +1,5 @@
 import request from 'supertest';
+import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 
 // Must be set before importing src/index to avoid process.exit
 if (!process.env.API_SECRET) {
@@ -10,8 +11,10 @@ import type { Server } from 'http';
 
 let server: Server;
 
-beforeAll(done => {
-  server = app.listen(0, done);
+beforeAll(() => {
+  return new Promise<void>(resolve => {
+    server = app.listen(0, () => resolve());
+  });
 });
 
 describe('/ping input parameters', () => {
@@ -238,6 +241,8 @@ describe('/eth_balance endpoint', () => {
   });
 });
 
-afterAll(done => {
-  server?.close(done);
+afterAll(() => {
+  return new Promise<void>(resolve => {
+    server?.close(() => resolve());
+  });
 });

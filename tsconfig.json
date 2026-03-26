@@ -4,13 +4,6 @@
     "module": "commonjs",
     "outDir": "dist",
     "rootDir": "src",
-    "baseUrl": ".",
-    "paths": {
-      "@solana/web3.js": ["node_modules/@solana/web3.js"],
-      "@solana/web3.js/*": ["node_modules/@solana/web3.js/*"],
-      "viem": ["node_modules/viem"],
-      "viem/*": ["node_modules/viem/*"]
-    },
     "strict": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
