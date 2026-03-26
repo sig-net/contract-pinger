@@ -37,10 +37,8 @@ exports.BlockchainHandlerRegistry = void 0;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 class BlockchainHandlerRegistry {
-    constructor() {
-        this._handlers = {};
-        this._loadErrors = [];
-    }
+    _handlers = {};
+    _loadErrors = [];
     register(chainName, handler) {
         this._handlers[chainName] = handler;
         return this;
