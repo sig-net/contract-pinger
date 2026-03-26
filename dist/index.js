@@ -42,7 +42,11 @@ const dotenv_1 = __importDefault(require("dotenv"));
 dotenv_1.default.config();
 const handlers_1 = __importDefault(require("./handlers"));
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
-const API_SECRET = process.env.API_SECRET || 'default-secret-key';
+const API_SECRET = process.env.API_SECRET;
+if (!API_SECRET) {
+    console.error('FATAL: API_SECRET environment variable is not set. Exiting.');
+    process.exit(1);
+}
 const app = (0, express_1.default)();
 exports.app = app;
 app.use(express_1.default.json());
@@ -184,18 +188,20 @@ app.use((err, req, res, next) => {
     console.error(err.stack);
     res.status(500).send('Something broke!');
 });
-const server = app.listen(PORT, () => {
-    console.log(`Server running at http://localhost:${PORT}`);
-    console.log(`Supported blockchains: ${handlers_1.default.getSupportedChains().join(', ')}`);
-    const loadErrors = handlers_1.default.getLoadErrors?.() || [];
-    if (loadErrors.length > 0) {
-        console.warn(`WARNING: ${loadErrors.length} errors occurred while loading blockchain handlers`);
-    }
-});
-exports.server = server;
-process.on('SIGTERM', () => {
-    console.log('SIGTERM signal received: closing HTTP server');
-    server.close(() => {
-        console.log('HTTP server closed');
+let server;
+if (require.main === module) {
+    exports.server = server = app.listen(PORT, () => {
+        console.log(`Server running at http://localhost:${PORT}`);
+        console.log(`Supported blockchains: ${handlers_1.default.getSupportedChains().join(', ')}`);
+        const loadErrors = handlers_1.default.getLoadErrors?.() || [];
+        if (loadErrors.length > 0) {
+            console.warn(`WARNING: ${loadErrors.length} errors occurred while loading blockchain handlers`);
+        }
     });
-});
+    process.on('SIGTERM', () => {
+        console.log('SIGTERM signal received: closing HTTP server');
+        server?.close(() => {
+            console.log('HTTP server closed');
+        });
+    });
+}

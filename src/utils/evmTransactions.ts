@@ -1,3 +1,10 @@
+import type { PublicClient, WalletClient } from 'viem';
+import type { contracts } from 'signet.js';
+
+type ChainSigContract = InstanceType<
+  typeof contracts.evm.ChainSignatureContract
+>;
+
 export const getSignArgs = (): [any, any] => {
   const payload = new Uint8Array(
     Array(32)
@@ -14,13 +21,13 @@ export const getCustomTransactionArgs = async ({
   publicClient,
   walletClient,
 }: {
-  publicClient: any;
-  walletClient: any;
+  publicClient: PublicClient;
+  walletClient: WalletClient;
 }) => {
   const { maxFeePerGas, maxPriorityFeePerGas } =
     await publicClient.estimateFeesPerGas();
   const nonce = await publicClient.getTransactionCount({
-    address: walletClient.account.address,
+    address: walletClient.account!.address,
     blockTag: 'latest',
   });
   return {
@@ -35,9 +42,9 @@ export const createSignRequestAndWaitSignature = async ({
   publicClient,
   walletClient,
 }: {
-  chainSigContract: any;
-  publicClient?: any;
-  walletClient?: any;
+  chainSigContract: ChainSigContract;
+  publicClient: PublicClient;
+  walletClient: WalletClient;
 }) => {
   const transactionArgs = await getCustomTransactionArgs({
     publicClient,
@@ -61,9 +68,9 @@ export const createSignRequest = async ({
   publicClient,
   walletClient,
 }: {
-  chainSigContract: any;
-  publicClient?: any;
-  walletClient?: any;
+  chainSigContract: ChainSigContract;
+  publicClient: PublicClient;
+  walletClient: WalletClient;
 }) => {
   const transactionArgs = await getCustomTransactionArgs({
     publicClient,

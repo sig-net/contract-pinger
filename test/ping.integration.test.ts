@@ -1,8 +1,21 @@
 import request from 'supertest';
-import { app, server } from '../src/index';
+
+// Must be set before importing src/index to avoid process.exit
+if (!process.env.API_SECRET) {
+  process.env.API_SECRET = 'test-secret-key';
+}
+
+import { app } from '../src/index';
+import type { Server } from 'http';
+
+let server: Server;
+
+beforeAll(done => {
+  server = app.listen(0, done);
+});
 
 describe('/ping input parameters', () => {
-  const API_SECRET = process.env.API_SECRET || 'default-secret-key';
+  const API_SECRET = process.env.API_SECRET!;
 
   it('should return 401 if secret is missing', async () => {
     const res = await request(app)
@@ -168,7 +181,7 @@ describe('/ health check', () => {
 });
 
 describe('/eth_balance endpoint', () => {
-  const API_SECRET = process.env.API_SECRET || 'default-secret-key';
+  const API_SECRET = process.env.API_SECRET!;
   const validAddress = '0x0000000000000000000000000000000000000000'; // always valid, always 0 balance
 
   it('should return 400 if address is missing', async () => {
@@ -218,5 +231,5 @@ describe('/eth_balance endpoint', () => {
 });
 
 afterAll(done => {
-  server.close(done);
+  server?.close(done);
 });
