@@ -213,13 +213,6 @@ if (require.main === module) {
     console.log(
       `Supported blockchains: ${blockchainHandlers.getSupportedChains().join(', ')}`
     );
-
-    const loadErrors = blockchainHandlers.getLoadErrors?.() || [];
-    if (loadErrors.length > 0) {
-      console.warn(
-        `WARNING: ${loadErrors.length} errors occurred while loading blockchain handlers`
-      );
-    }
   });
 
   process.on('SIGTERM', () => {

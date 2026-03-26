@@ -1,5 +1,5 @@
 import request from 'supertest';
-import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 
 // Must be set before importing src/index to avoid process.exit
 if (!process.env.API_SECRET) {
@@ -99,7 +99,7 @@ describe('/ping input parameters', () => {
     expect(res.body).toHaveProperty('signatureRequest');
     expect(res.body.signatureRequest).toHaveProperty('txHash');
     expect(res.body.signatureRequest).toHaveProperty('requestId');
-  }, 10000);
+  });
 
   it('positive: Solana, testnet, no check', async () => {
     const res = await request(app)
@@ -110,7 +110,7 @@ describe('/ping input parameters', () => {
     expect(res.body).toHaveProperty('signatureRequest');
     expect(res.body.signatureRequest).toHaveProperty('txHash');
     expect(res.body.signatureRequest).toHaveProperty('requestId');
-  }, 10000);
+  });
 
   it('positive: simultaneous requests Solana', async () => {
     const requests = Array.from({ length: 10 }, () =>
@@ -127,7 +127,7 @@ describe('/ping input parameters', () => {
       expect(res.body.signatureRequest).toHaveProperty('txHash');
       expect(res.body.signatureRequest).toHaveProperty('requestId');
     });
-  }, 10000);
+  });
 
   it('positive: simultaneous requests Ethereum', async () => {
     const requests = Array.from({ length: 5 }, () =>
@@ -144,7 +144,7 @@ describe('/ping input parameters', () => {
       expect(res.body.signatureRequest).toHaveProperty('txHash');
       expect(res.body.signatureRequest).toHaveProperty('requestId');
     });
-  }, 10000);
+  });
 
   it('positive: Solana, dev, with check', async () => {
     const res = await request(app)
@@ -154,7 +154,7 @@ describe('/ping input parameters', () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('signature');
-  }, 10000);
+  });
 
   it.skip('positive: Solana, testnet, with check', async () => {
     const res = await request(app)
@@ -164,7 +164,7 @@ describe('/ping input parameters', () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('signature');
-  }, 10000);
+  });
 
   it('negative: Ethereum, dev, with check (must fail, unsupported)', async () => {
     const res = await request(app)
@@ -178,7 +178,7 @@ describe('/ping input parameters', () => {
     expect(res.body.details).toBe(
       'Ethereum can not be called with check=true due to long finalization time'
     );
-  }, 10000);
+  });
 });
 
 describe('/ health check', () => {

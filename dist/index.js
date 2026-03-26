@@ -193,10 +193,6 @@ if (require.main === module) {
     exports.server = server = app.listen(PORT, () => {
         console.log(`Server running at http://localhost:${PORT}`);
         console.log(`Supported blockchains: ${handlers_1.default.getSupportedChains().join(', ')}`);
-        const loadErrors = handlers_1.default.getLoadErrors?.() || [];
-        if (loadErrors.length > 0) {
-            console.warn(`WARNING: ${loadErrors.length} errors occurred while loading blockchain handlers`);
-        }
     });
     process.on('SIGTERM', () => {
         console.log('SIGTERM signal received: closing HTTP server');
