@@ -25,6 +25,14 @@ describe('/ping input parameters', () => {
     expect(res.body.error).toBe('Unauthorized');
   });
 
+  it('should not return 401 if valid secret is provided', async () => {
+    const res = await request(app)
+      .post('/ping')
+      .set('x-api-secret', API_SECRET)
+      .send({ chain: 'Solana', check: false, env: 'dev' });
+    expect(res.status).not.toBe(401);
+  });
+
   it('should return 400 if chain is missing', async () => {
     const res = await request(app)
       .post('/ping')
