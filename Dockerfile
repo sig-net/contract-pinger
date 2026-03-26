@@ -1,9 +1,12 @@
-FROM node:latest
+FROM node:20-slim
 
 WORKDIR /app
 
+RUN corepack enable && corepack prepare pnpm@10.4.1 --activate
+
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+
 COPY . .
 
-RUN npm install
-
-CMD [ "npm", "run", "start" ]
+CMD [ "pnpm", "run", "start" ]
