@@ -37,32 +37,6 @@ export const getCustomTransactionArgs = async ({
   };
 };
 
-export const createSignRequestAndWaitSignature = async ({
-  chainSigContract,
-  publicClient,
-  walletClient,
-}: {
-  chainSigContract: ChainSigContract;
-  publicClient: PublicClient;
-  walletClient: WalletClient;
-}) => {
-  const transactionArgs = await getCustomTransactionArgs({
-    publicClient,
-    walletClient,
-  });
-  const signArgs = getSignArgs();
-  const rsvSignature = await chainSigContract.sign(signArgs[0], {
-    ...signArgs[1],
-    retry: {
-      delay: 10000,
-      retryCount: 12,
-    },
-    transaction: transactionArgs,
-  });
-  console.log({ rsvSignature });
-  return rsvSignature;
-};
-
 export const createSignRequest = async ({
   chainSigContract,
   publicClient,
