@@ -5,7 +5,12 @@ dotenv.config();
 import blockchainHandlers from './handlers';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
-const API_SECRET = process.env.API_SECRET || 'default-secret-key';
+const API_SECRET = process.env.API_SECRET;
+
+if (!API_SECRET) {
+  console.error('FATAL: API_SECRET environment variable is not set. Exiting.');
+  process.exit(1);
+}
 
 const app = express();
 
@@ -17,11 +22,11 @@ const validateSecret = (
   res: express.Response,
   next: express.NextFunction
 ) => {
-  const requestSecret = req.headers['x-api-secret'] || req.body.secret;
-
   if (req.method === 'GET' && req.path === '/') {
     return next();
   }
+
+  const requestSecret = req.headers['x-api-secret'] || req.body?.secret;
 
   if (!requestSecret || requestSecret !== API_SECRET) {
     return res.status(401).json({
@@ -200,25 +205,22 @@ app.use(
   }
 );
 
-const server = app.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}`);
-  console.log(
-    `Supported blockchains: ${blockchainHandlers.getSupportedChains().join(', ')}`
-  );
+let server: ReturnType<typeof app.listen> | undefined;
 
-  const loadErrors = blockchainHandlers.getLoadErrors?.() || [];
-  if (loadErrors.length > 0) {
-    console.warn(
-      `WARNING: ${loadErrors.length} errors occurred while loading blockchain handlers`
+if (require.main === module) {
+  server = app.listen(PORT, () => {
+    console.log(`Server running at http://localhost:${PORT}`);
+    console.log(
+      `Supported blockchains: ${blockchainHandlers.getSupportedChains().join(', ')}`
     );
-  }
-});
-
-process.on('SIGTERM', () => {
-  console.log('SIGTERM signal received: closing HTTP server');
-  server.close(() => {
-    console.log('HTTP server closed');
   });
-});
+
+  process.on('SIGTERM', () => {
+    console.log('SIGTERM signal received: closing HTTP server');
+    server?.close(() => {
+      console.log('HTTP server closed');
+    });
+  });
+}
 
 export { app, server };

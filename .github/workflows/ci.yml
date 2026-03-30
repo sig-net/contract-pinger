@@ -11,12 +11,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v3
-        with:
-          version: 8
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '22.14.0'
           cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install
@@ -36,12 +34,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v3
-        with:
-          version: 8
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '22.14.0'
           cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install
@@ -54,6 +50,7 @@ jobs:
     env:
       PORT: 3001
       NODE_ENV: development
+      API_SECRET: test-secret-key
       SIG_ETH_RPC_URL_SEPOLIA: ${{ secrets.SIG_ETH_RPC_URL_SEPOLIA }}
       SIG_ETH_RPC_URL_MAINNET: ${{ secrets.SIG_ETH_RPC_URL_MAINNET }}
       SIG_EVM_SK_1: ${{ secrets.SIG_EVM_SK_1 }}
@@ -66,12 +63,10 @@ jobs:
       SIG_SOL_SK: ${{ secrets.SIG_SOL_SK }}
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v3
-        with:
-          version: 8
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '22.14.0'
           cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install

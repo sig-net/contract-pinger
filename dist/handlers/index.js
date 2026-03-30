@@ -34,13 +34,10 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.BlockchainHandlerRegistry = void 0;
-const fs = __importStar(require("fs"));
-const path = __importStar(require("path"));
+const ethereum = __importStar(require("./ethereum"));
+const solana = __importStar(require("./solana"));
 class BlockchainHandlerRegistry {
-    constructor() {
-        this._handlers = {};
-        this._loadErrors = [];
-    }
+    _handlers = {};
     register(chainName, handler) {
         this._handlers[chainName] = handler;
         return this;
@@ -58,42 +55,9 @@ class BlockchainHandlerRegistry {
     getSupportedChains() {
         return Object.keys(this._handlers);
     }
-    getLoadErrors() {
-        return this._loadErrors;
-    }
-    loadHandlersFromDirectory(directory) {
-        try {
-            const files = fs
-                .readdirSync(directory)
-                .filter(file => file !== 'index.ts' &&
-                file !== 'index.js' &&
-                (file.endsWith('.ts') || file.endsWith('.js')));
-            files.forEach(file => {
-                const filePath = path.join(directory, file);
-                try {
-                    let handler;
-                    try {
-                        handler = require(filePath);
-                    }
-                    catch (requireError) {
-                        this._loadErrors.push({ file, error: requireError });
-                        return;
-                    }
-                    if (handler) {
-                        this.register(handler.chainName, handler);
-                    }
-                }
-                catch (error) {
-                    this._loadErrors.push({ file, error });
-                }
-            });
-        }
-        catch (error) {
-            this._loadErrors.push({ directory, error });
-        }
-    }
 }
 exports.BlockchainHandlerRegistry = BlockchainHandlerRegistry;
 const registry = new BlockchainHandlerRegistry();
-registry.loadHandlersFromDirectory(__dirname);
+registry.register(ethereum.chainName, ethereum);
+registry.register(solana.chainName, solana);
 exports.default = registry;

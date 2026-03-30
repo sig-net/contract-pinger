@@ -1,8 +1,19 @@
 import request from 'supertest';
-import { app, server } from '../src/index';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+
+import { app } from '../src/index';
+import type { Server } from 'http';
+
+let server: Server;
+
+beforeAll(() => {
+  return new Promise<void>(resolve => {
+    server = app.listen(0, () => resolve());
+  });
+});
 
 describe('/ping input parameters', () => {
-  const API_SECRET = process.env.API_SECRET || 'default-secret-key';
+  const API_SECRET = process.env.API_SECRET!;
 
   it('should return 401 if secret is missing', async () => {
     const res = await request(app)
@@ -10,6 +21,14 @@ describe('/ping input parameters', () => {
       .send({ chain: 'Solana', check: true, env: 'dev' });
     expect(res.status).toBe(401);
     expect(res.body.error).toBe('Unauthorized');
+  });
+
+  it('should not return 401 if valid secret is provided', async () => {
+    const res = await request(app)
+      .post('/ping')
+      .set('x-api-secret', API_SECRET)
+      .send({ chain: 'Solana', check: false, env: 'dev' });
+    expect(res.status).not.toBe(401);
   });
 
   it('should return 400 if chain is missing', async () => {
@@ -75,7 +94,7 @@ describe('/ping input parameters', () => {
     expect(res.body).toHaveProperty('signatureRequest');
     expect(res.body.signatureRequest).toHaveProperty('txHash');
     expect(res.body.signatureRequest).toHaveProperty('requestId');
-  }, 10000);
+  });
 
   it('positive: Solana, testnet, no check', async () => {
     const res = await request(app)
@@ -86,7 +105,7 @@ describe('/ping input parameters', () => {
     expect(res.body).toHaveProperty('signatureRequest');
     expect(res.body.signatureRequest).toHaveProperty('txHash');
     expect(res.body.signatureRequest).toHaveProperty('requestId');
-  }, 10000);
+  });
 
   it('positive: simultaneous requests Solana', async () => {
     const requests = Array.from({ length: 10 }, () =>
@@ -103,7 +122,7 @@ describe('/ping input parameters', () => {
       expect(res.body.signatureRequest).toHaveProperty('txHash');
       expect(res.body.signatureRequest).toHaveProperty('requestId');
     });
-  }, 10000);
+  });
 
   it('positive: simultaneous requests Ethereum', async () => {
     const requests = Array.from({ length: 5 }, () =>
@@ -120,7 +139,7 @@ describe('/ping input parameters', () => {
       expect(res.body.signatureRequest).toHaveProperty('txHash');
       expect(res.body.signatureRequest).toHaveProperty('requestId');
     });
-  }, 10000);
+  });
 
   it('positive: Solana, dev, with check', async () => {
     const res = await request(app)
@@ -130,7 +149,7 @@ describe('/ping input parameters', () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('signature');
-  }, 10000);
+  });
 
   it.skip('positive: Solana, testnet, with check', async () => {
     const res = await request(app)
@@ -140,7 +159,7 @@ describe('/ping input parameters', () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('signature');
-  }, 10000);
+  });
 
   it('negative: Ethereum, dev, with check (must fail, unsupported)', async () => {
     const res = await request(app)
@@ -154,7 +173,7 @@ describe('/ping input parameters', () => {
     expect(res.body.details).toBe(
       'Ethereum can not be called with check=true due to long finalization time'
     );
-  }, 10000);
+  });
 });
 
 describe('/ health check', () => {
@@ -168,7 +187,7 @@ describe('/ health check', () => {
 });
 
 describe('/eth_balance endpoint', () => {
-  const API_SECRET = process.env.API_SECRET || 'default-secret-key';
+  const API_SECRET = process.env.API_SECRET!;
   const validAddress = '0x0000000000000000000000000000000000000000'; // always valid, always 0 balance
 
   it('should return 400 if address is missing', async () => {
@@ -217,6 +236,8 @@ describe('/eth_balance endpoint', () => {
   });
 });
 
-afterAll(done => {
-  server.close(done);
+afterAll(() => {
+  return new Promise<void>(resolve => {
+    server?.close(() => resolve());
+  });
 });
