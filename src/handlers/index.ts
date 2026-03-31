@@ -1,8 +1,9 @@
-import * as ethereum from './ethereum';
-import * as solana from './solana';
+import * as fs from 'fs';
+import * as path from 'path';
 
 export class BlockchainHandlerRegistry {
   private _handlers: Record<string, any> = {};
+  private _loadErrors: any[] = [];
 
   register(chainName: string, handler: any) {
     this._handlers[chainName] = handler;
@@ -24,10 +25,45 @@ export class BlockchainHandlerRegistry {
   getSupportedChains() {
     return Object.keys(this._handlers);
   }
+
+  getLoadErrors() {
+    return this._loadErrors;
+  }
+
+  loadHandlersFromDirectory(directory: string) {
+    try {
+      const files = fs
+        .readdirSync(directory)
+        .filter(
+          file =>
+            file !== 'index.ts' &&
+            file !== 'index.js' &&
+            (file.endsWith('.ts') || file.endsWith('.js'))
+        );
+      files.forEach(file => {
+        const filePath = path.join(directory, file);
+        try {
+          let handler;
+          try {
+            handler = require(filePath);
+          } catch (requireError) {
+            this._loadErrors.push({ file, error: requireError });
+            return;
+          }
+          if (handler) {
+            this.register(handler.chainName, handler);
+          }
+        } catch (error) {
+          this._loadErrors.push({ file, error });
+        }
+      });
+    } catch (error) {
+      this._loadErrors.push({ directory, error });
+    }
+  }
 }
 
 const registry = new BlockchainHandlerRegistry();
-registry.register(ethereum.chainName, ethereum);
-registry.register(solana.chainName, solana);
+registry.loadHandlersFromDirectory(__dirname);
 
 export default registry;

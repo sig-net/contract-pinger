@@ -20,6 +20,12 @@ async function execute({ check_signature, environment, }) {
     if (check_signature) {
         // TODO: add ability to call with check=true on Ethereum
         throw new Error(`Ethereum can not be called with check=true due to long finalization time`);
+        const signature = await (0, evmTransactions_1.createSignRequestAndWaitSignature)({
+            chainSigContract,
+            publicClient,
+            walletClient,
+        });
+        return { signature };
     }
     else {
         const signatureRequest = await (0, evmTransactions_1.createSignRequest)({

@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.createSignRequest = exports.getCustomTransactionArgs = exports.getSignArgs = void 0;
+exports.createSignRequest = exports.createSignRequestAndWaitSignature = exports.getCustomTransactionArgs = exports.getSignArgs = void 0;
 const getSignArgs = () => {
     const payload = new Uint8Array(Array(32)
         .fill(0)
@@ -24,6 +24,24 @@ const getCustomTransactionArgs = async ({ publicClient, walletClient, }) => {
     };
 };
 exports.getCustomTransactionArgs = getCustomTransactionArgs;
+const createSignRequestAndWaitSignature = async ({ chainSigContract, publicClient, walletClient, }) => {
+    const transactionArgs = await (0, exports.getCustomTransactionArgs)({
+        publicClient,
+        walletClient,
+    });
+    const signArgs = (0, exports.getSignArgs)();
+    const rsvSignature = await chainSigContract.sign(signArgs[0], {
+        ...signArgs[1],
+        retry: {
+            delay: 10000,
+            retryCount: 12,
+        },
+        transaction: transactionArgs,
+    });
+    console.log({ rsvSignature });
+    return rsvSignature;
+};
+exports.createSignRequestAndWaitSignature = createSignRequestAndWaitSignature;
 const createSignRequest = async ({ chainSigContract, publicClient, walletClient, }) => {
     const transactionArgs = await (0, exports.getCustomTransactionArgs)({
         publicClient,

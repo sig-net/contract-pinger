@@ -39,7 +39,7 @@ const anchor = __importStar(require("@coral-xyz/anchor"));
 const signet_js_1 = require("signet.js");
 const useEnv_1 = require("./useEnv");
 const initSolana = ({ contractAddress, environment, }) => {
-    const { solRpcUrlDevnet, solRpcUrlMainnet, solSk, solRootPublicKey } = (0, useEnv_1.useEnv)();
+    const { solRpcUrlDevnet, solRpcUrlMainnet, solSk } = (0, useEnv_1.useEnv)();
     const config = {
         dev: {
             solanaRpcUrl: solRpcUrlDevnet,
@@ -54,14 +54,6 @@ const initSolana = ({ contractAddress, environment, }) => {
             solanaPrivateKey: solSk,
         },
     }[environment];
-    if (!config.solanaRpcUrl) {
-        throw new Error(`Solana RPC URL for ${environment} environment is missing. Please set ${environment === 'mainnet'
-            ? 'SIG_SOL_RPC_URL_MAINNET'
-            : 'SIG_SOL_RPC_URL_DEV'} in your environment.`);
-    }
-    if (!config.solanaPrivateKey) {
-        throw new Error(`Solana secret key is missing. Please set SIG_SOL_SK in your environment.`);
-    }
     const connection = new web3_js_1.Connection(config.solanaRpcUrl, 'confirmed');
     const keypairArray = JSON.parse(config.solanaPrivateKey);
     const keypair = web3_js_1.Keypair.fromSecretKey(new Uint8Array(keypairArray));
@@ -70,11 +62,12 @@ const initSolana = ({ contractAddress, environment, }) => {
         commitment: 'confirmed',
     });
     const requesterKeypair = web3_js_1.Keypair.generate();
+    // You may want to pass a real rootPublicKey here if needed
     const chainSigContract = new signet_js_1.contracts.solana.ChainSignatureContract({
         provider,
         programId: contractAddress,
         config: {
-            rootPublicKey: solRootPublicKey,
+            rootPublicKey: '',
             requesterAddress: requesterKeypair.publicKey.toString(),
         },
     });
