@@ -8,13 +8,6 @@ type ChainSigContract = InstanceType<
 >;
 
 /**
- * Path the MPC derives its own responder key at when answering a bidirectional
- * request. Used to check that a respond signature came from the network we
- * asked, rather than from anyone who can land a transaction on the program.
- */
-export const RESPOND_BIDIRECTIONAL_PATH = 'respond_bidirectional';
-
-/**
  * Derive the Ethereum address a `(requester, path)` pair controls.
  *
  * `getDerivedPublicKey` already wraps `deriveChildPublicKey` with the Solana

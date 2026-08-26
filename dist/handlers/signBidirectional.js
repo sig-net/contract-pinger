@@ -303,7 +303,7 @@ class BidirectionalService {
                 this.jobs.fail(job.id, 'respond_mismatch', new Error(`Expected ${bidirectionalTx_1.EXPECTED_SERIALIZED_OUTPUT}, got ${serializedOutput}`));
                 return;
             }
-            await this.verifyRespondSigner(respond.signature, worker.path);
+            this.assertRespondSigned(respond.signature, worker.path);
             this.jobs.update(job.id, {
                 state: 'responded',
                 timings: { finishedAt: Date.now() },
@@ -314,25 +314,18 @@ class BidirectionalService {
         }
     }
     /**
-     * Check the respond signature came from the MPC's own responder key.
+     * Assert the respond carried a signature at all.
      *
-     * Without a vault program verifying this on-chain, it is the only thing
-     * separating a genuine respond from anyone who can land an event on the
-     * chain-signatures program.
+     * Deliberately weaker than it sounds. Verifying *whose* signature it is
+     * would need the key the MPC signs respond payloads with, and that is not
+     * derivable from anything this service holds — on Ethereum the responses
+     * come from the nodes' own accounts, which is a different key schedule from
+     * the request path. Until that is pinned down, presence is the only claim
+     * this can honestly make, so it does not pretend to more.
      */
-    async verifyRespondSigner(signature, path) {
-        const { chainSigContract, keypair } = this.solana();
-        const expected = await (0, derivation_1.deriveEthAddress)({
-            chainSigContract,
-            predecessor: keypair.publicKey.toString(),
-            path: derivation_1.RESPOND_BIDIRECTIONAL_PATH,
-        });
-        // Recorded rather than enforced: the responder path is a property of the
-        // network's own key schedule, so a mismatch is worth surfacing but is not
-        // yet grounds for failing a job that otherwise completed.
+    assertRespondSigned(signature, path) {
         if (!signature) {
-            console.warn(`bidirectional: respond for path ${path} carried no signature ` +
-                `(expected responder ${expected})`);
+            throw new Error(`respondBidirectionalEvent for path ${path} carried no signature`);
         }
     }
 }

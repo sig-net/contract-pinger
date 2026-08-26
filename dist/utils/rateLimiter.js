@@ -5,7 +5,7 @@ exports.RateLimiter = void 0;
  * Sliding-window request limiter.
  *
  * Bounds how fast jobs are *started*, which is a different constraint from
- * how many run at once: a job holds its address for under a minute but stays
+ * how many run at once: a job holds its address for about a minute but stays
  * alive for up to thirty-five, so an unbounded arrival rate would pile up
  * respond waits long after the address pool stopped being the bottleneck.
  */

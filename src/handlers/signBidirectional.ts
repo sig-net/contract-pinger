@@ -10,11 +10,7 @@ import {
   KEY_VERSION,
   type TxMode,
 } from '../utils/bidirectionalTx';
-import {
-  assertDerivedSender,
-  deriveEthAddress,
-  RESPOND_BIDIRECTIONAL_PATH,
-} from '../utils/derivation';
+import { assertDerivedSender, deriveEthAddress } from '../utils/derivation';
 import { buildSignBidirectionalInstruction } from '../utils/signBidirectionalIx';
 import { getSharedSolana, type SolanaEnvironment } from '../utils/initSolana';
 import { useEnv } from '../utils/useEnv';
@@ -366,7 +362,7 @@ export class BidirectionalService {
         return;
       }
 
-      await this.verifyRespondSigner(respond.signature, worker.path);
+      this.assertRespondSigned(respond.signature, worker.path);
 
       this.jobs.update(job.id, {
         state: 'responded',
@@ -378,29 +374,19 @@ export class BidirectionalService {
   }
 
   /**
-   * Check the respond signature came from the MPC's own responder key.
+   * Assert the respond carried a signature at all.
    *
-   * Without a vault program verifying this on-chain, it is the only thing
-   * separating a genuine respond from anyone who can land an event on the
-   * chain-signatures program.
+   * Deliberately weaker than it sounds. Verifying *whose* signature it is
+   * would need the key the MPC signs respond payloads with, and that is not
+   * derivable from anything this service holds — on Ethereum the responses
+   * come from the nodes' own accounts, which is a different key schedule from
+   * the request path. Until that is pinned down, presence is the only claim
+   * this can honestly make, so it does not pretend to more.
    */
-  private async verifyRespondSigner(
-    signature: unknown,
-    path: string
-  ): Promise<void> {
-    const { chainSigContract, keypair } = this.solana();
-    const expected = await deriveEthAddress({
-      chainSigContract,
-      predecessor: keypair.publicKey.toString(),
-      path: RESPOND_BIDIRECTIONAL_PATH,
-    });
-    // Recorded rather than enforced: the responder path is a property of the
-    // network's own key schedule, so a mismatch is worth surfacing but is not
-    // yet grounds for failing a job that otherwise completed.
+  private assertRespondSigned(signature: unknown, path: string): void {
     if (!signature) {
-      console.warn(
-        `bidirectional: respond for path ${path} carried no signature ` +
-          `(expected responder ${expected})`
+      throw new Error(
+        `respondBidirectionalEvent for path ${path} carried no signature`
       );
     }
   }

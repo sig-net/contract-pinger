@@ -1,15 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.assertDerivedSender = exports.DerivationMismatchError = exports.deriveEthAddress = exports.RESPOND_BIDIRECTIONAL_PATH = void 0;
+exports.assertDerivedSender = exports.DerivationMismatchError = exports.deriveEthAddress = void 0;
 const viem_1 = require("viem");
 const utils_1 = require("viem/utils");
 const bidirectionalTx_1 = require("./bidirectionalTx");
-/**
- * Path the MPC derives its own responder key at when answering a bidirectional
- * request. Used to check that a respond signature came from the network we
- * asked, rather than from anyone who can land a transaction on the program.
- */
-exports.RESPOND_BIDIRECTIONAL_PATH = 'respond_bidirectional';
 /**
  * Derive the Ethereum address a `(requester, path)` pair controls.
  *

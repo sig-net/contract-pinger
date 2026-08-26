@@ -145,6 +145,17 @@ An address is released back to the pool once its transaction confirms, not when
 the job finishes: the nonce is spent at mining time, long before the MPC
 finishes waiting for finality.
 
+### Running a single instance
+
+The address pool is in-process state guarding addresses that are global, so the
+service must not be scaled horizontally. A second instance starts its own pool,
+leases an address the first one already holds, reads the same nonce, and one of
+the two transactions is rejected as underpriced. The same applies to `/ping` on
+Ethereum, which spreads nonces across `SIG_EVM_SK_1..5` the same way. Solana is
+unaffected, having no sequential nonce.
+
+Job state is in memory too, so a restart drops whatever is in flight.
+
 ## Environment Variables
 
 Copy `.env.example` to `.env` and fill in the required values for your environment.
