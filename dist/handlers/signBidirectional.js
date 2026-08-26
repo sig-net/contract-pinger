@@ -112,7 +112,12 @@ class BidirectionalService {
         const job = this.jobs.create(this.environment, mode);
         void this.run(job).catch(error => {
             if (error instanceof workerPool_1.NoWorkerAvailableError) {
-                this.jobs.fail(job.id, 'no_worker_available', error);
+                // The pool already knows which of the two it was; collapsing them here
+                // would leave the distinction only in the message text, where no
+                // metric can group by it.
+                this.jobs.fail(job.id, error.reason === 'all_underfunded'
+                    ? 'all_workers_underfunded'
+                    : 'all_workers_busy', error);
                 return;
             }
             // Logged with its stack: `internal_error` means we did not anticipate

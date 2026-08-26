@@ -91,6 +91,25 @@ describe('WorkerPool', () => {
     expect(pool.acquire().path).toBe(leased[0].path);
   });
 
+  it('reports why it refused: every worker busy vs every worker underfunded', () => {
+    const leased = [pool.acquire(), pool.acquire(), pool.acquire()];
+    try {
+      pool.acquire();
+      throw new Error('expected acquire to throw');
+    } catch (error) {
+      expect((error as NoWorkerAvailableError).reason).toBe('all_busy');
+    }
+
+    leased.forEach(w => pool.release(w.path));
+    pool.all().forEach(w => pool.setBalance(w.path, 0n, 1n));
+    try {
+      pool.acquire();
+      throw new Error('expected acquire to throw');
+    } catch (error) {
+      expect((error as NoWorkerAvailableError).reason).toBe('all_underfunded');
+    }
+  });
+
   it('skips underfunded workers rather than handing out a job that cannot broadcast', () => {
     pool.setBalance('load-0', 0n, 1n);
     pool.setBalance('load-1', 0n, 1n);
@@ -119,6 +138,28 @@ describe('JobStore', () => {
     expect(view.state).toBe('failed');
     expect(view.failureReason).toBe('signature_timeout');
     expect(view.durations.totalMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('distinguishes a busy pool from an unfunded one', () => {
+    // These call for different actions by different people — resize the pool
+    // versus top up the wallets — so they must not share a reason code.
+    const store = new JobStore(10);
+    const busy = store.create('testnet', 'eth_self_transfer');
+    const broke = store.create('testnet', 'eth_self_transfer');
+
+    store.fail(
+      busy.id,
+      'all_workers_busy',
+      new NoWorkerAvailableError('all_busy')
+    );
+    store.fail(
+      broke.id,
+      'all_workers_underfunded',
+      new NoWorkerAvailableError('all_underfunded')
+    );
+
+    expect(store.view(busy.id)!.failureReason).toBe('all_workers_busy');
+    expect(store.view(broke.id)!.failureReason).toBe('all_workers_underfunded');
   });
 
   it('distinguishes signature timeouts from respond timeouts', () => {

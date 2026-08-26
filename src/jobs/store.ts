@@ -18,8 +18,14 @@ export type JobState =
  * collapse into one bucket.
  */
 export type FailureReason =
+  // Three distinct operational causes, deliberately not merged. Every address
+  // is leased means the arrival rate outran the pool; every address is below
+  // the minimum means the wallets need topping up; and the preflight case is
+  // narrower still — the leased address cleared the minimum but cannot cover
+  // this transaction's gas at the current price.
+  | 'all_workers_busy'
+  | 'all_workers_underfunded'
   | 'preflight_underfunded'
-  | 'no_worker_available'
   | 'signature_timeout'
   | 'derivation_mismatch'
   | 'broadcast_failed'
