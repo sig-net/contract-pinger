@@ -110,6 +110,28 @@ Two modes, both needing Sepolia ETH only and no ERC20 balance:
   exercises the node's `debug_traceTransaction` extraction path, so it is worth
   running on a slower cadence even when the ETH mode is the default.
 
+### Load testing
+
+Raise `SIG_BIDIRECTIONAL_PATHS` to the concurrency you want, fund each derived
+address, start the server, and drive it:
+
+```sh
+pnpm dev                                    # or pnpm start
+pnpm loadtest --jobs 50
+pnpm loadtest --jobs 20 --mode erc20_zero_transfer --env testnet
+```
+
+The driver submits at whatever rate the server allows — a 429 carries a
+`retryAfterMs`, which it waits out rather than treating as an error — then
+polls every job to completion and reports success counts, failure reasons, and
+latency percentiles per stage.
+
+Sizing it: a job holds its address for roughly the time to sign plus two
+confirmations, and stays alive for as long as the MPC takes to see finality. So
+`PATHS` sets sustainable throughput while `MAX_JOBS` bounds how many respond
+waits pile up. At the default 10 jobs/minute, expect a few hundred jobs alive
+at once during a long run.
+
 ### Funding
 
 Each derivation path owns one Ethereum address with its own nonce space, which
