@@ -51,16 +51,6 @@ Run all integration and unit tests:
 pnpm test
 ```
 
-### Code Formatting
-
-To format all code in the project using Prettier and your `.prettierrc` settings, run:
-
-```sh
-pnpm format
-```
-
-This will automatically format your codebase according to the project's style rules.
-
 ### End-to-end test
 
 The bidirectional round trip is excluded from `pnpm test` because its respond
@@ -72,6 +62,16 @@ pnpm test:e2e
 
 It skips itself when `SIG_SOL_RPC_URL_DEV`, `SIG_SOL_SK` or
 `SIG_ETH_RPC_URL_SEPOLIA` are unset.
+
+### Code Formatting
+
+To format all code in the project using Prettier and your `.prettierrc` settings, run:
+
+```sh
+pnpm format
+```
+
+This will automatically format your codebase according to the project's style rules.
 
 ## Endpoints
 
