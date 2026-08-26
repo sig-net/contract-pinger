@@ -84,7 +84,7 @@ const asRootPublicKey = (value) => {
         `public key starting 02, 03 or 04. Got "${value.slice(0, 12)}...". ` +
         `Leave it unset to pair the root key to the program address instead.`);
 };
-const buildContract = ({ contractAddress, provider, requesterAddress, }) => {
+const buildContract = ({ contractAddress, provider, requesterAddress, disableRetryOnRateLimit = false, }) => {
     const { solRootPublicKey } = (0, useEnv_1.useEnv)();
     return new signet_js_1.contracts.solana.ChainSignatureContract({
         provider,
@@ -99,11 +99,7 @@ const buildContract = ({ contractAddress, provider, requesterAddress, }) => {
                 ? asRootPublicKey(solRootPublicKey)
                 : undefined,
             requesterAddress,
-            // web3.js retries 429s on its own, which fights the backfill loop in
-            // `waitForEvent` and multiplies requests against an endpoint that is
-            // already refusing them. signet.js documents disabling it as the
-            // recommended pairing with backfill.
-            disableRetryOnRateLimit: true,
+            disableRetryOnRateLimit,
         },
     });
 };
@@ -142,6 +138,12 @@ const getSharedSolana = ({ contractAddress, environment, }) => {
             contractAddress,
             provider,
             requesterAddress: keypair.publicKey.toString(),
+            // Only the bidirectional path disables it. web3.js retrying 429s fights
+            // the backfill loop in `waitForEvent` and multiplies requests against an
+            // endpoint already refusing them, which signet.js documents. The
+            // unidirectional `/ping` path runs no backfill, so it keeps the retry
+            // that has always carried it through a rate-limited endpoint.
+            disableRetryOnRateLimit: true,
         }),
     };
     sharedContexts.set(key, context);
