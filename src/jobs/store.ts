@@ -118,10 +118,6 @@ export class JobStore {
     return job;
   }
 
-  get(id: string): JobRecord | undefined {
-    return this.jobs.get(id);
-  }
-
   view(id: string): JobView | undefined {
     const job = this.jobs.get(id);
     if (!job) return undefined;
@@ -147,10 +143,5 @@ export class JobStore {
       error: error instanceof Error ? error.message : String(error),
       timings: { finishedAt: Date.now() },
     });
-  }
-
-  /** Test seam. */
-  clear(): void {
-    this.jobs.clear();
   }
 }

@@ -41,9 +41,6 @@ class JobStore {
         this.jobs.set(job.id, job);
         return job;
     }
-    get(id) {
-        return this.jobs.get(id);
-    }
     view(id) {
         const job = this.jobs.get(id);
         if (!job)
@@ -69,10 +66,6 @@ class JobStore {
             error: error instanceof Error ? error.message : String(error),
             timings: { finishedAt: Date.now() },
         });
-    }
-    /** Test seam. */
-    clear() {
-        this.jobs.clear();
     }
 }
 exports.JobStore = JobStore;

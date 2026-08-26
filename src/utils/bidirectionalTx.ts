@@ -2,7 +2,6 @@ import {
   createPublicClient,
   encodeFunctionData,
   http,
-  parseTransaction,
   recoverAddress,
   serializeTransaction,
   type Hex,
@@ -173,7 +172,7 @@ export const attachSignature = async ({
 }: {
   unsigned: TransactionSerializableEIP1559;
   signature: RsvSignature;
-}): Promise<{ serialized: Hex; hash: Hex; recoveredFrom: Hex }> => {
+}): Promise<{ serialized: Hex; recoveredFrom: Hex }> => {
   const v = BigInt(signature.v);
   const serialized = serializeTransaction(unsigned, {
     r: hex(signature.r),
@@ -191,13 +190,5 @@ export const attachSignature = async ({
     },
   });
 
-  return {
-    serialized,
-    hash: keccak256(serialized),
-    recoveredFrom,
-  };
+  return { serialized, recoveredFrom };
 };
-
-/** Re-parse a serialized transaction. Used by tests to assert field fidelity. */
-export const parseSerialized = (serialized: Hex) =>
-  parseTransaction(serialized);

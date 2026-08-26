@@ -14,7 +14,7 @@ type ChainSigContract = InstanceType<
  * target that is "not yet enabled", so the default pubkey is passed to mean
  * "no callback" rather than leaving a stale pointer at some program.
  */
-export const NO_CALLBACK_PROGRAM = PublicKey.default;
+const NO_CALLBACK_PROGRAM = PublicKey.default;
 
 export interface SignBidirectionalArgs {
   /** The unsigned, RLP-encoded transaction the MPC will sign. */

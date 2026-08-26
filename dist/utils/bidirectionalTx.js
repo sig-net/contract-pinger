@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.parseSerialized = exports.attachSignature = exports.buildTransaction = exports.createSepoliaClient = exports.EXPECTED_SERIALIZED_OUTPUT = exports.KEY_VERSION = exports.SEPOLIA_CHAIN_ID = exports.ETHEREUM_CAIP2_ID = exports.isTxMode = exports.TX_MODES = void 0;
+exports.attachSignature = exports.buildTransaction = exports.createSepoliaClient = exports.EXPECTED_SERIALIZED_OUTPUT = exports.KEY_VERSION = exports.SEPOLIA_CHAIN_ID = exports.ETHEREUM_CAIP2_ID = exports.isTxMode = exports.TX_MODES = void 0;
 const viem_1 = require("viem");
 const chains_1 = require("viem/chains");
 const utils_1 = require("viem/utils");
@@ -131,13 +131,6 @@ const attachSignature = async ({ unsigned, signature, }) => {
             yParity: Number(v >= 27n ? v - 27n : v),
         },
     });
-    return {
-        serialized,
-        hash: (0, utils_1.keccak256)(serialized),
-        recoveredFrom,
-    };
+    return { serialized, recoveredFrom };
 };
 exports.attachSignature = attachSignature;
-/** Re-parse a serialized transaction. Used by tests to assert field fidelity. */
-const parseSerialized = (serialized) => (0, viem_1.parseTransaction)(serialized);
-exports.parseSerialized = parseSerialized;

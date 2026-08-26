@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.resetSharedSolana = exports.getSharedSolana = exports.initSolana = void 0;
+exports.getSharedSolana = exports.initSolana = void 0;
 const web3_js_1 = require("@solana/web3.js");
 const anchor = __importStar(require("@coral-xyz/anchor"));
 const signet_js_1 = require("signet.js");
@@ -148,6 +148,3 @@ const getSharedSolana = ({ contractAddress, environment, }) => {
     return context;
 };
 exports.getSharedSolana = getSharedSolana;
-/** Test seam: drops memoized contexts so a suite can vary the environment. */
-const resetSharedSolana = () => sharedContexts.clear();
-exports.resetSharedSolana = resetSharedSolana;

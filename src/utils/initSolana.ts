@@ -161,6 +161,3 @@ export const getSharedSolana = ({
   sharedContexts.set(key, context);
   return context;
 };
-
-/** Test seam: drops memoized contexts so a suite can vary the environment. */
-export const resetSharedSolana = () => sharedContexts.clear();

@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.resetServices = exports.listServices = exports.getService = exports.BidirectionalService = exports.contractAddresses = exports.chainName = void 0;
+exports.listServices = exports.getService = exports.BidirectionalService = void 0;
 const web3_js_1 = require("@solana/web3.js");
 const signet_js_1 = require("signet.js");
 const bidirectionalTx_1 = require("../utils/bidirectionalTx");
@@ -12,8 +12,7 @@ const workerPool_1 = require("../utils/workerPool");
 const funding_1 = require("../utils/funding");
 const rateLimiter_1 = require("../utils/rateLimiter");
 const store_1 = require("../jobs/store");
-exports.chainName = 'SignBidirectional';
-exports.contractAddresses = {
+const contractAddresses = {
     dev: signet_js_1.constants.CONTRACT_ADDRESSES.SOLANA.TESTNET_DEV,
     testnet: signet_js_1.constants.CONTRACT_ADDRESSES.SOLANA.TESTNET,
     mainnet: signet_js_1.constants.CONTRACT_ADDRESSES.SOLANA.MAINNET,
@@ -52,7 +51,7 @@ class BidirectionalService {
     }
     solana() {
         return (0, initSolana_1.getSharedSolana)({
-            contractAddress: exports.contractAddresses[this.environment],
+            contractAddress: contractAddresses[this.environment],
             environment: this.environment,
         });
     }
@@ -101,11 +100,6 @@ class BidirectionalService {
             this.sweep().catch(error => console.error('bidirectional funding sweep failed:', error));
         }, fundingSweepIntervalMs);
         this.sweepTimer.unref?.();
-    }
-    stopFundingSweeps() {
-        if (this.sweepTimer)
-            clearTimeout(this.sweepTimer);
-        this.sweepTimer = undefined;
     }
     /** Accepts a job and runs it in the background. */
     start(mode) {
@@ -201,7 +195,7 @@ class BidirectionalService {
             // --- Step 6 and 9: both waits start now -----------------------------
             // The respond watcher is registered before broadcasting so a fast
             // respond cannot land in the gap between confirmation and subscription.
-            const signer = new web3_js_1.PublicKey(exports.contractAddresses[this.environment]);
+            const signer = new web3_js_1.PublicKey(contractAddresses[this.environment]);
             const signaturePromise = chainSigContract.waitForEvent({
                 eventName: 'signatureRespondedEvent',
                 requestId,
@@ -344,9 +338,3 @@ const listServices = () => [
     ...services.values(),
 ];
 exports.listServices = listServices;
-const resetServices = () => {
-    for (const service of services.values())
-        service.stopFundingSweeps();
-    services.clear();
-};
-exports.resetServices = resetServices;

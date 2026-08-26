@@ -24,9 +24,7 @@ import { sweepFunding, type SweepResult } from '../utils/funding';
 import { RateLimiter } from '../utils/rateLimiter';
 import { JobStore, type JobRecord } from '../jobs/store';
 
-export const chainName = 'SignBidirectional';
-
-export const contractAddresses = {
+const contractAddresses = {
   dev: constants.CONTRACT_ADDRESSES.SOLANA.TESTNET_DEV,
   testnet: constants.CONTRACT_ADDRESSES.SOLANA.TESTNET,
   mainnet: constants.CONTRACT_ADDRESSES.SOLANA.MAINNET,
@@ -122,11 +120,6 @@ export class BidirectionalService {
       );
     }, fundingSweepIntervalMs);
     this.sweepTimer.unref?.();
-  }
-
-  stopFundingSweeps(): void {
-    if (this.sweepTimer) clearTimeout(this.sweepTimer);
-    this.sweepTimer = undefined;
   }
 
   /** Accepts a job and runs it in the background. */
@@ -408,8 +401,3 @@ export const getService = (
 export const listServices = (): readonly BidirectionalService[] => [
   ...services.values(),
 ];
-
-export const resetServices = () => {
-  for (const service of services.values()) service.stopFundingSweeps();
-  services.clear();
-};
