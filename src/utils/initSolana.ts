@@ -1,6 +1,6 @@
 import { Connection, Keypair } from '@solana/web3.js';
 import * as anchor from '@coral-xyz/anchor';
-import { contracts } from 'signet.js';
+import { contracts, type RootPublicKey } from 'signet.js';
 import { useEnv } from './useEnv';
 
 export type SolanaEnvironment = 'dev' | 'testnet' | 'mainnet';
@@ -44,6 +44,29 @@ const buildProvider = (environment: SolanaEnvironment) => {
   return { provider, keypair };
 };
 
+/**
+ * Narrow the `SIG_SOL_ROOT_PUBLIC_KEY` override to the shape signet.js accepts.
+ *
+ * The override is arbitrary environment input, and a malformed value would
+ * otherwise travel all the way to key normalization and fail there with an
+ * error that says nothing about where it came from.
+ */
+const asRootPublicKey = (value: string): RootPublicKey => {
+  if (
+    value.startsWith('secp256k1:') ||
+    value.startsWith('04') ||
+    value.startsWith('02') ||
+    value.startsWith('03')
+  ) {
+    return value as RootPublicKey;
+  }
+  throw new Error(
+    `SIG_SOL_ROOT_PUBLIC_KEY must be a naj key ("secp256k1:...") or a hex ` +
+      `public key starting 02, 03 or 04. Got "${value.slice(0, 12)}...". ` +
+      `Leave it unset to pair the root key to the program address instead.`
+  );
+};
+
 const buildContract = ({
   contractAddress,
   provider,
@@ -63,7 +86,9 @@ const buildContract = ({
       // and that fallback is an `||`, so an empty string happens to work
       // today — but it would stop working the moment upstream switched to
       // `??`, sending the empty string through to key normalization.
-      rootPublicKey: solRootPublicKey || undefined,
+      rootPublicKey: solRootPublicKey
+        ? asRootPublicKey(solRootPublicKey)
+        : undefined,
       requesterAddress,
     },
   });
