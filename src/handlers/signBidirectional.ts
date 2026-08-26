@@ -18,7 +18,12 @@ import {
 import { buildSignBidirectionalInstruction } from '../utils/signBidirectionalIx';
 import { getSharedSolana, type SolanaEnvironment } from '../utils/initSolana';
 import { useEnv } from '../utils/useEnv';
-import { buildPaths, WorkerPool, type Worker } from '../utils/workerPool';
+import {
+  buildPaths,
+  NoWorkerAvailableError,
+  WorkerPool,
+  type Worker,
+} from '../utils/workerPool';
 import { sweepFunding, type SweepResult } from '../utils/funding';
 import { RateLimiter } from '../utils/rateLimiter';
 import { JobStore, type JobRecord } from '../jobs/store';
@@ -132,6 +137,13 @@ export class BidirectionalService {
   start(mode: TxMode): JobRecord {
     const job = this.jobs.create(this.environment, mode);
     void this.run(job).catch(error => {
+      if (error instanceof NoWorkerAvailableError) {
+        this.jobs.fail(job.id, 'no_worker_available', error);
+        return;
+      }
+      // Logged with its stack: `internal_error` means we did not anticipate
+      // this, so swallowing the detail leaves nothing to debug from.
+      console.error(`sign_bidirectional job ${job.id} failed:`, error);
       this.jobs.fail(job.id, 'internal_error', error);
     });
     return job;
@@ -172,9 +184,14 @@ export class BidirectionalService {
       const balance = await this.client.getBalance({ address: worker.address });
       if (balance < built.gasCostWei) {
         this.pool.setBalance(worker.path, balance, bidirectional.minBalanceWei);
-        throw new Error(
-          `${worker.address} holds ${balance} wei, needs ${built.gasCostWei} for gas`
+        this.jobs.fail(
+          job.id,
+          'preflight_underfunded',
+          new Error(
+            `${worker.address} holds ${balance} wei, needs ${built.gasCostWei} for gas`
+          )
         );
+        return;
       }
 
       // --- Steps 3-4: request id ------------------------------------------

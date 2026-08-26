@@ -111,6 +111,13 @@ class BidirectionalService {
     start(mode) {
         const job = this.jobs.create(this.environment, mode);
         void this.run(job).catch(error => {
+            if (error instanceof workerPool_1.NoWorkerAvailableError) {
+                this.jobs.fail(job.id, 'no_worker_available', error);
+                return;
+            }
+            // Logged with its stack: `internal_error` means we did not anticipate
+            // this, so swallowing the detail leaves nothing to debug from.
+            console.error(`sign_bidirectional job ${job.id} failed:`, error);
             this.jobs.fail(job.id, 'internal_error', error);
         });
         return job;
@@ -145,7 +152,8 @@ class BidirectionalService {
             const balance = await this.client.getBalance({ address: worker.address });
             if (balance < built.gasCostWei) {
                 this.pool.setBalance(worker.path, balance, bidirectional.minBalanceWei);
-                throw new Error(`${worker.address} holds ${balance} wei, needs ${built.gasCostWei} for gas`);
+                this.jobs.fail(job.id, 'preflight_underfunded', new Error(`${worker.address} holds ${balance} wei, needs ${built.gasCostWei} for gas`));
+                return;
             }
             // --- Steps 3-4: request id ------------------------------------------
             const requestId = signet_js_1.contracts.solana.getRequestIdBidirectional({

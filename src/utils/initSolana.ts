@@ -90,6 +90,11 @@ const buildContract = ({
         ? asRootPublicKey(solRootPublicKey)
         : undefined,
       requesterAddress,
+      // web3.js retries 429s on its own, which fights the backfill loop in
+      // `waitForEvent` and multiplies requests against an endpoint that is
+      // already refusing them. signet.js documents disabling it as the
+      // recommended pairing with backfill.
+      disableRetryOnRateLimit: true,
     },
   });
 };

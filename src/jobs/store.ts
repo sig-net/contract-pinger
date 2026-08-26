@@ -19,6 +19,7 @@ export type JobState =
  */
 export type FailureReason =
   | 'preflight_underfunded'
+  | 'no_worker_available'
   | 'signature_timeout'
   | 'derivation_mismatch'
   | 'broadcast_failed'
