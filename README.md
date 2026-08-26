@@ -145,6 +145,11 @@ An address is released back to the pool once its transaction confirms, not when
 the job finishes: the nonce is spent at mining time, long before the MPC
 finishes waiting for finality.
 
+The `Bidirectional Round Trip (manual)` workflow runs one round trip from CI on
+demand, which is a way to exercise a branch without local setup. It needs a
+funded derived address for the CI environment's own `SIG_SOL_SK`, since the
+addresses follow from whichever key signs.
+
 ### Running a single instance
 
 The address pool is in-process state guarding addresses that are global, so the

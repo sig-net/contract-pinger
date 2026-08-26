@@ -1,9 +1,12 @@
-name: Bidirectional Monitor
+name: Bidirectional Round Trip (manual)
 
-# `eth_self_transfer` hourly and `erc20_zero_transfer` daily. They are not
-# redundant: the ETH mode never touches the node's debug_traceTransaction path,
-# so trace-extraction breakage is invisible to it. The ERC20 mode is the only
-# one that covers it.
+# On demand only. Runs the full round trip from CI against the code on a
+# branch, so a change can be exercised without local setup.
+#
+# Deliberately unscheduled: the derived addresses are a function of this
+# environment's SIG_SOL_SK, so a schedule would need its own funded addresses
+# maintained solely to keep this green. Scheduled monitoring belongs against
+# the deployed service, where it can report somewhere.
 on:
   workflow_dispatch:
     inputs:
@@ -23,9 +26,6 @@ on:
         options:
           - dev
           - testnet
-  schedule:
-    - cron: '23 * * * *'
-    - cron: '47 6 * * *'
 
 permissions:
   contents: read
@@ -54,10 +54,7 @@ jobs:
       # One address is enough for a monitor; the pool matters under load.
       SIG_BIDIRECTIONAL_PATHS: '1'
       SIG_BIDIRECTIONAL_E2E_ENV: ${{ inputs.env || 'dev' }}
-      SIG_BIDIRECTIONAL_E2E_MODE: >-
-        ${{ inputs.mode
-            || (github.event.schedule == '47 6 * * *' && 'erc20_zero_transfer')
-            || 'eth_self_transfer' }}
+      SIG_BIDIRECTIONAL_E2E_MODE: ${{ inputs.mode || 'eth_self_transfer' }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -86,7 +83,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "## Bidirectional Monitor"
+            echo "## Bidirectional Round Trip"
             echo
             echo "- Mode: \`${SIG_BIDIRECTIONAL_E2E_MODE}\`"
             echo "- Network: \`${SIG_BIDIRECTIONAL_E2E_ENV}\`"
