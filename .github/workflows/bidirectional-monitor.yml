@@ -39,7 +39,7 @@ concurrency:
 jobs:
   round-trip:
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 70
     environment: Pinger Test ENV
     env:
       API_SECRET: monitor-secret

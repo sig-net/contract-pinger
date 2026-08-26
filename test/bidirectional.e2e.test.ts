@@ -3,6 +3,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { Server } from 'http';
 
 import { app } from '../src/index';
+import { useEnv } from '../src/utils/useEnv';
 
 /**
  * The real round trip: Solana request, MPC signature, Sepolia broadcast, MPC
@@ -21,7 +22,17 @@ const missing = REQUIRED.filter(name => !process.env[name]);
 const ENV = process.env.SIG_BIDIRECTIONAL_E2E_ENV || 'dev';
 const MODE = process.env.SIG_BIDIRECTIONAL_E2E_MODE || 'eth_self_transfer';
 const POLL_INTERVAL_MS = 10_000;
-const DEADLINE_MS = 40 * 60 * 1000;
+
+// Derived from the job's own timeouts rather than hardcoded: a job may
+// legitimately spend the full signature, confirmation and respond budgets in
+// sequence, and a shorter deadline here would report a healthy job as a
+// failure. Slack covers polling granularity and startup.
+const { bidirectional } = useEnv();
+const DEADLINE_MS =
+  bidirectional.signatureTimeoutMs +
+  bidirectional.ethConfirmTimeoutMs +
+  bidirectional.respondTimeoutMs +
+  120_000;
 
 let server: Server;
 const API_SECRET = process.env.API_SECRET!;
