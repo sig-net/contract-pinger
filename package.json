@@ -7,8 +7,9 @@
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
     "build": "tsc",
-    "test": "vitest run",
-    "format": "prettier --write ."
+    "test": "vitest run --exclude \"**/*.e2e.test.ts\"",
+    "format": "prettier --write .",
+    "test:e2e": "vitest run test/bidirectional.e2e.test.ts"
   },
   "keywords": [],
   "author": "",

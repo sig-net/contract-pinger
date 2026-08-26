@@ -33,26 +33,17 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.initSolana = void 0;
+exports.resetSharedSolana = exports.getSharedSolana = exports.initSolana = void 0;
 const web3_js_1 = require("@solana/web3.js");
 const anchor = __importStar(require("@coral-xyz/anchor"));
 const signet_js_1 = require("signet.js");
 const useEnv_1 = require("./useEnv");
-const initSolana = ({ contractAddress, environment, }) => {
-    const { solRpcUrlDevnet, solRpcUrlMainnet, solSk, solRootPublicKey } = (0, useEnv_1.useEnv)();
+const resolveConfig = (environment) => {
+    const { solRpcUrlDevnet, solRpcUrlMainnet, solSk } = (0, useEnv_1.useEnv)();
     const config = {
-        dev: {
-            solanaRpcUrl: solRpcUrlDevnet,
-            solanaPrivateKey: solSk,
-        },
-        testnet: {
-            solanaRpcUrl: solRpcUrlDevnet,
-            solanaPrivateKey: solSk,
-        },
-        mainnet: {
-            solanaRpcUrl: solRpcUrlMainnet,
-            solanaPrivateKey: solSk,
-        },
+        dev: { solanaRpcUrl: solRpcUrlDevnet, solanaPrivateKey: solSk },
+        testnet: { solanaRpcUrl: solRpcUrlDevnet, solanaPrivateKey: solSk },
+        mainnet: { solanaRpcUrl: solRpcUrlMainnet, solanaPrivateKey: solSk },
     }[environment];
     if (!config.solanaRpcUrl) {
         throw new Error(`Solana RPC URL for ${environment} environment is missing. Please set ${environment === 'mainnet'
@@ -62,6 +53,10 @@ const initSolana = ({ contractAddress, environment, }) => {
     if (!config.solanaPrivateKey) {
         throw new Error(`Solana secret key is missing. Please set SIG_SOL_SK in your environment.`);
     }
+    return config;
+};
+const buildProvider = (environment) => {
+    const config = resolveConfig(environment);
     const connection = new web3_js_1.Connection(config.solanaRpcUrl, 'confirmed');
     const keypairArray = JSON.parse(config.solanaPrivateKey);
     const keypair = web3_js_1.Keypair.fromSecretKey(new Uint8Array(keypairArray));
@@ -69,15 +64,65 @@ const initSolana = ({ contractAddress, environment, }) => {
     const provider = new anchor.AnchorProvider(connection, wallet, {
         commitment: 'confirmed',
     });
-    const requesterKeypair = web3_js_1.Keypair.generate();
-    const chainSigContract = new signet_js_1.contracts.solana.ChainSignatureContract({
+    return { provider, keypair };
+};
+const buildContract = ({ contractAddress, provider, requesterAddress, }) => {
+    const { solRootPublicKey } = (0, useEnv_1.useEnv)();
+    return new signet_js_1.contracts.solana.ChainSignatureContract({
         provider,
         programId: contractAddress,
         config: {
-            rootPublicKey: solRootPublicKey,
-            requesterAddress: requesterKeypair.publicKey.toString(),
+            // Passed as `undefined` rather than `''` when the override is absent.
+            // signet.js falls back to pairing the root key to the program address,
+            // and that fallback is an `||`, so an empty string happens to work
+            // today — but it would stop working the moment upstream switched to
+            // `??`, sending the empty string through to key normalization.
+            rootPublicKey: solRootPublicKey || undefined,
+            requesterAddress,
         },
+    });
+};
+const initSolana = ({ contractAddress, environment, }) => {
+    const { provider } = buildProvider(environment);
+    const requesterKeypair = web3_js_1.Keypair.generate();
+    const chainSigContract = buildContract({
+        contractAddress,
+        provider,
+        requesterAddress: requesterKeypair.publicKey.toString(),
     });
     return { chainSigContract, provider, requesterKeypair };
 };
 exports.initSolana = initSolana;
+const sharedContexts = new Map();
+/**
+ * One provider and one `ChainSignatureContract` per environment, reused across
+ * requests.
+ *
+ * The bidirectional flow opens two long-lived event waits per job, and a
+ * subscription shared across waiters can only ever be shared if the waiters
+ * come from the same contract instance. Constructing a fresh instance per
+ * request — as `initSolana` does for the unidirectional path — forecloses
+ * that, so this is deliberately memoized.
+ */
+const getSharedSolana = ({ contractAddress, environment, }) => {
+    const key = `${environment}:${contractAddress}`;
+    const existing = sharedContexts.get(key);
+    if (existing)
+        return existing;
+    const { provider, keypair } = buildProvider(environment);
+    const context = {
+        provider,
+        keypair,
+        chainSigContract: buildContract({
+            contractAddress,
+            provider,
+            requesterAddress: keypair.publicKey.toString(),
+        }),
+    };
+    sharedContexts.set(key, context);
+    return context;
+};
+exports.getSharedSolana = getSharedSolana;
+/** Test seam: drops memoized contexts so a suite can vary the environment. */
+const resetSharedSolana = () => sharedContexts.clear();
+exports.resetSharedSolana = resetSharedSolana;

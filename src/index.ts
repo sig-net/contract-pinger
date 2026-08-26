@@ -3,6 +3,13 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 import blockchainHandlers from './handlers';
+import {
+  getService as getBidirectionalService,
+  listServices as listBidirectionalServices,
+} from './handlers/signBidirectional';
+import { buildStats } from './jobs/stats';
+import { isTxMode, TX_MODES } from './utils/bidirectionalTx';
+import { useEnv } from './utils/useEnv';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 const API_SECRET = process.env.API_SECRET;
@@ -128,6 +135,189 @@ app.post(
   }
 );
 
+const bidirectionalEnvironments = ['dev', 'testnet', 'mainnet'] as const;
+
+const resolveBidirectionalService = (env: unknown) => {
+  if (
+    typeof env !== 'string' ||
+    !(bidirectionalEnvironments as readonly string[]).includes(env)
+  ) {
+    return { error: 'Invalid or missing environment parameter' as const };
+  }
+  const rpcUrl =
+    env === 'mainnet'
+      ? process.env.SIG_ETH_RPC_URL_MAINNET
+      : process.env.SIG_ETH_RPC_URL_SEPOLIA;
+  if (!rpcUrl) {
+    return {
+      error: 'Missing Ethereum RPC URL for selected environment' as const,
+    };
+  }
+  return {
+    service: getBidirectionalService(
+      env as 'dev' | 'testnet' | 'mainnet',
+      rpcUrl
+    ),
+  };
+};
+
+app.post(
+  '/sign_bidirectional',
+  async (req: express.Request, res: express.Response): Promise<void> => {
+    try {
+      const { env, mode } = req.body ?? {};
+
+      // Mode is validated before the service is resolved so a bad mode always
+      // reports itself, rather than being masked by a missing RPC URL.
+      const txMode = mode ?? useEnv().bidirectional.txMode;
+      if (!isTxMode(txMode)) {
+        res
+          .status(400)
+          .json({ error: `Invalid mode: ${txMode}`, validModes: TX_MODES });
+        return;
+      }
+
+      const resolved = resolveBidirectionalService(env);
+      if ('error' in resolved) {
+        res.status(400).json({
+          error: resolved.error,
+          validEnvironments: bidirectionalEnvironments,
+        });
+        return;
+      }
+
+      const { service } = resolved;
+
+      // Arrival rate is capped separately from concurrency: a job holds its
+      // address for under a minute but stays alive for up to thirty-five, so
+      // an unbounded rate piles up respond waits long after the address pool
+      // has stopped being the bottleneck.
+      if (!service.limiter.tryAcquire()) {
+        const retryAfterMs = service.limiter.retryAfterMs();
+        res
+          .status(429)
+          .set('Retry-After', String(Math.ceil(retryAfterMs / 1000)))
+          .json({
+            error: 'Rate limit exceeded',
+            limitPerMinute: useEnv().bidirectional.maxRequestsPerMinute,
+            retryAfterMs,
+          });
+        return;
+      }
+
+      if (service.jobs.atCapacity()) {
+        res.status(429).json({
+          error: 'Too many jobs in flight',
+          activeJobs: service.jobs.activeCount,
+          maxJobs: useEnv().bidirectional.maxJobs,
+        });
+        return;
+      }
+
+      const job = service.start(txMode);
+      console.log('sign_bidirectional accepted:', {
+        jobId: job.id,
+        env,
+        mode: txMode,
+      });
+      res.status(202).json({ jobId: job.id, state: job.state, mode: txMode });
+    } catch (error: any) {
+      console.error('sign_bidirectional endpoint error:', error);
+      res.status(500).json({
+        error: 'Failed to start bidirectional job',
+        details: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+);
+
+app.get(
+  '/sign_bidirectional/workers',
+  async (req: express.Request, res: express.Response): Promise<void> => {
+    try {
+      const resolved = resolveBidirectionalService(
+        (req.query.env as string) || 'dev'
+      );
+      if ('error' in resolved) {
+        res.status(400).json({ error: resolved.error });
+        return;
+      }
+      const { service } = resolved;
+      await service.ensureAddresses();
+      await service.refreshBalances();
+      res.json({
+        workers: service.pool.all().map(w => ({
+          path: w.path,
+          address: w.address,
+          balanceWei: w.balanceWei.toString(),
+          busy: w.busy,
+          underfunded: w.underfunded,
+          leases: w.leases,
+        })),
+      });
+    } catch (error: any) {
+      console.error('sign_bidirectional/workers error:', error);
+      res.status(500).json({ error: error.message || String(error) });
+    }
+  }
+);
+
+app.get(
+  '/sign_bidirectional/stats',
+  (req: express.Request, res: express.Response): void => {
+    const resolved = resolveBidirectionalService(
+      (req.query.env as string) || 'dev'
+    );
+    if ('error' in resolved) {
+      res.status(400).json({ error: resolved.error });
+      return;
+    }
+    res.json(buildStats(resolved.service));
+  }
+);
+
+app.post(
+  '/sign_bidirectional/fund',
+  async (req: express.Request, res: express.Response): Promise<void> => {
+    try {
+      const resolved = resolveBidirectionalService(req.body?.env ?? 'dev');
+      if ('error' in resolved) {
+        res.status(400).json({ error: resolved.error });
+        return;
+      }
+      const result = await resolved.service.sweep();
+      res.json({
+        checked: result.checked,
+        toppedUp: result.toppedUp.map(t => ({
+          path: t.path,
+          address: t.address,
+          amountWei: t.amountWei.toString(),
+          txHash: t.txHash,
+        })),
+        stillUnderfunded: result.stillUnderfunded,
+        errors: result.errors,
+      });
+    } catch (error: any) {
+      console.error('sign_bidirectional/fund error:', error);
+      res.status(500).json({ error: error.message || String(error) });
+    }
+  }
+);
+
+app.get(
+  '/sign_bidirectional/:jobId',
+  (req: express.Request, res: express.Response): void => {
+    for (const service of listBidirectionalServices()) {
+      const view = service.jobs.view(req.params.jobId);
+      if (view) {
+        res.json(view);
+        return;
+      }
+    }
+    res.status(404).json({ error: 'Unknown jobId' });
+  }
+);
+
 app.post(
   '/eth_balance',
   async (req: express.Request, res: express.Response): Promise<void> => {
@@ -213,6 +403,22 @@ if (require.main === module) {
     console.log(
       `Supported blockchains: ${blockchainHandlers.getSupportedChains().join(', ')}`
     );
+
+    // Opt-in, because a sweep spends real ETH. Without it the derived
+    // addresses are funded by hand or by POST /sign_bidirectional/fund;
+    // GET /sign_bidirectional/workers lists what needs topping up.
+    if (process.env.SIG_BIDIRECTIONAL_AUTO_FUND === 'true') {
+      const rpcUrl = process.env.SIG_ETH_RPC_URL_SEPOLIA;
+      if (rpcUrl) {
+        const service = getBidirectionalService('dev', rpcUrl);
+        service.startFundingSweeps();
+        console.log('Bidirectional funding sweeps enabled');
+      } else {
+        console.warn(
+          'SIG_BIDIRECTIONAL_AUTO_FUND is set but SIG_ETH_RPC_URL_SEPOLIA is not; sweeps disabled'
+        );
+      }
+    }
   });
 
   process.on('SIGTERM', () => {
