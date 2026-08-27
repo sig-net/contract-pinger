@@ -160,7 +160,10 @@ the two transactions is rejected as underpriced. The same applies to `/ping` on
 Ethereum, which spreads nonces across `SIG_EVM_SK_1..5` the same way. Solana is
 unaffected, having no sequential nonce.
 
-Job state is in memory too, so a restart drops whatever is in flight.
+Job state is in memory too, so a restart drops whatever is in flight. Finished
+jobs are retained up to `SIG_BIDIRECTIONAL_RETAINED_JOBS` and then dropped
+oldest-first, which bounds memory and means `/stats` covers a recent window
+rather than all time.
 
 ## Environment Variables
 

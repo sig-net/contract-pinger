@@ -15,9 +15,29 @@ const durationsFor = (t) => {
 };
 class JobStore {
     maxJobs;
+    retained;
     jobs = new Map();
-    constructor(maxJobs) {
+    /**
+     * @param maxJobs   concurrent unfinished jobs allowed
+     * @param retained  finished jobs kept for inspection and aggregates. Without
+     *                  a bound the map grows for the life of the process, and
+     *                  `/stats` sorts across every job ever recorded, so both
+     *                  memory and that endpoint degrade steadily on a
+     *                  long-running instance.
+     */
+    constructor(maxJobs, retained = 1000) {
         this.maxJobs = maxJobs;
+        this.retained = retained;
+    }
+    /** Drops the oldest finished jobs once more than `retained` have piled up. */
+    prune() {
+        const finished = [...this.jobs.values()].filter(j => j.state === 'responded' || j.state === 'failed');
+        if (finished.length <= this.retained)
+            return;
+        finished
+            .sort((a, b) => (a.timings.finishedAt ?? 0) - (b.timings.finishedAt ?? 0))
+            .slice(0, finished.length - this.retained)
+            .forEach(j => this.jobs.delete(j.id));
     }
     get activeCount() {
         let active = 0;
@@ -39,6 +59,7 @@ class JobStore {
             timings: { acceptedAt: Date.now() },
         };
         this.jobs.set(job.id, job);
+        this.prune();
         return job;
     }
     view(id) {

@@ -45,7 +45,7 @@ class BidirectionalService {
         this.rpcUrl = rpcUrl;
         const { bidirectional } = (0, useEnv_1.useEnv)();
         this.pool = new workerPool_1.WorkerPool((0, workerPool_1.buildPaths)(bidirectional.pathPrefix, bidirectional.paths));
-        this.jobs = new store_1.JobStore(bidirectional.maxJobs);
+        this.jobs = new store_1.JobStore(bidirectional.maxJobs, bidirectional.retainedJobs);
         this.limiter = new rateLimiter_1.RateLimiter(bidirectional.maxRequestsPerMinute);
         this.client = (0, bidirectionalTx_1.createSepoliaClient)(rpcUrl);
     }

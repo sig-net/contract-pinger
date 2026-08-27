@@ -49,6 +49,9 @@ const useEnv = () => {
             // because an address is released once its transaction mines, long
             // before the MPC finishes waiting for finality.
             maxJobs: num(process.env.SIG_BIDIRECTIONAL_MAX_JOBS, 400),
+            // Finished jobs kept for inspection and for /stats. Bounded so a
+            // long-running instance does not accumulate them indefinitely.
+            retainedJobs: num(process.env.SIG_BIDIRECTIONAL_RETAINED_JOBS, 1000),
             maxRequestsPerMinute: num(process.env.SIG_BIDIRECTIONAL_MAX_REQUESTS_PER_MIN, 10),
             txMode: process.env.SIG_BIDIRECTIONAL_TX_MODE || 'eth_self_transfer',
             erc20Address: process.env.SIG_BIDIRECTIONAL_ERC20_ADDRESS ||

@@ -92,7 +92,30 @@ const durationsFor = (t: JobTimings): Record<string, number> => {
 export class JobStore {
   private readonly jobs = new Map<string, JobRecord>();
 
-  constructor(private readonly maxJobs: number) {}
+  /**
+   * @param maxJobs   concurrent unfinished jobs allowed
+   * @param retained  finished jobs kept for inspection and aggregates. Without
+   *                  a bound the map grows for the life of the process, and
+   *                  `/stats` sorts across every job ever recorded, so both
+   *                  memory and that endpoint degrade steadily on a
+   *                  long-running instance.
+   */
+  constructor(
+    private readonly maxJobs: number,
+    private readonly retained = 1000
+  ) {}
+
+  /** Drops the oldest finished jobs once more than `retained` have piled up. */
+  private prune(): void {
+    const finished = [...this.jobs.values()].filter(
+      j => j.state === 'responded' || j.state === 'failed'
+    );
+    if (finished.length <= this.retained) return;
+    finished
+      .sort((a, b) => (a.timings.finishedAt ?? 0) - (b.timings.finishedAt ?? 0))
+      .slice(0, finished.length - this.retained)
+      .forEach(j => this.jobs.delete(j.id));
+  }
 
   get activeCount(): number {
     let active = 0;
@@ -115,6 +138,7 @@ export class JobStore {
       timings: { acceptedAt: Date.now() },
     };
     this.jobs.set(job.id, job);
+    this.prune();
     return job;
   }
 

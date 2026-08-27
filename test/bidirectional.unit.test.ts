@@ -174,6 +174,21 @@ describe('JobStore', () => {
     expect(store.view(b.id)!.failureReason).toBe('respond_timeout');
   });
 
+  it('drops the oldest finished jobs rather than growing without bound', () => {
+    const store = new JobStore(100, 2);
+    const ids = ['a', 'b', 'c'].map(() => {
+      const job = store.create('testnet', 'eth_self_transfer');
+      store.update(job.id, { state: 'responded' });
+      return job.id;
+    });
+    // Creating a fourth pushes the oldest finished job out.
+    store.create('testnet', 'eth_self_transfer');
+
+    expect(store.view(ids[0])).toBeUndefined();
+    expect(store.view(ids[1])).toBeDefined();
+    expect(store.view(ids[2])).toBeDefined();
+  });
+
   it('counts only unfinished jobs toward capacity', () => {
     const store = new JobStore(2);
     const a = store.create('dev', 'eth_self_transfer');

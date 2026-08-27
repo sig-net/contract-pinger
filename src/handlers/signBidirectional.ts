@@ -61,7 +61,7 @@ export class BidirectionalService {
     this.pool = new WorkerPool(
       buildPaths(bidirectional.pathPrefix, bidirectional.paths)
     );
-    this.jobs = new JobStore(bidirectional.maxJobs);
+    this.jobs = new JobStore(bidirectional.maxJobs, bidirectional.retainedJobs);
     this.limiter = new RateLimiter(bidirectional.maxRequestsPerMinute);
     this.client = createSepoliaClient(rpcUrl);
   }
