@@ -152,6 +152,12 @@ export class BidirectionalService {
     const { chainSigContract, provider, keypair } = this.solana();
     let worker: Worker | undefined;
     let leaseReleased = false;
+    // Both event waits are registered before the transaction is broadcast, but
+    // most failure paths return long before the respond leg would settle. Its
+    // subscription and backfill timers would otherwise stay alive for the full
+    // respond timeout — up to thirty-five minutes after the job is already
+    // recorded as failed, and against the same RPC every other job is using.
+    const watches = new AbortController();
 
     const releaseLease = () => {
       if (worker && !leaseReleased) {
@@ -245,6 +251,7 @@ export class BidirectionalService {
         timeoutMs: bidirectional.signatureTimeoutMs,
         backfillIntervalMs: 15_000,
         healthCheckIntervalMs: 15_000,
+        signal: watches.signal,
       });
       const respondPromise = chainSigContract.waitForEvent({
         eventName: 'respondBidirectionalEvent',
@@ -254,6 +261,7 @@ export class BidirectionalService {
         timeoutMs: bidirectional.respondTimeoutMs,
         backfillIntervalMs: 15_000,
         healthCheckIntervalMs: 15_000,
+        signal: watches.signal,
       });
       // Nothing awaits this until step 9; without a no-op handler a timeout
       // there would surface as an unhandled rejection first.
@@ -363,6 +371,8 @@ export class BidirectionalService {
       });
     } finally {
       releaseLease();
+      // No-op once both have settled; tears down the subscriptions otherwise.
+      watches.abort();
     }
   }
 
