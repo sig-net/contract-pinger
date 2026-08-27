@@ -110,6 +110,35 @@ describe('WorkerPool', () => {
     }
   });
 
+  it('withholds an address whose broadcast outcome is unknown', () => {
+    // Releasing it would let the next job read the same `latest` nonce while
+    // the previous transaction is still pending, producing two signatures over
+    // one nonce — the collision the pool exists to prevent.
+    const leased = pool.acquire();
+    pool.quarantine(leased.path, 7);
+    pool.release(leased.path);
+
+    expect(pool.acquire().path).not.toBe(leased.path);
+    expect(pool.acquire().path).not.toBe(leased.path);
+    expect(() => pool.acquire()).toThrowError(NoWorkerAvailableError);
+  });
+
+  it('returns a withheld address once the chain moves past its nonce', () => {
+    const leased = pool.acquire();
+    pool.quarantine(leased.path, 7);
+    pool.release(leased.path);
+
+    // Still pending: the nonce has not advanced.
+    pool.reconcile(leased.path, 7);
+    expect(pool.all().find(w => w.path === leased.path)!.pendingNonce).toBe(7);
+
+    // Mined or dropped — either way the next nonce is knowable again.
+    pool.reconcile(leased.path, 8);
+    expect(
+      pool.all().find(w => w.path === leased.path)!.pendingNonce
+    ).toBeUndefined();
+  });
+
   it('skips underfunded workers rather than handing out a job that cannot broadcast', () => {
     pool.setBalance('load-0', 0n, 1n);
     pool.setBalance('load-1', 0n, 1n);
@@ -176,16 +205,19 @@ describe('JobStore', () => {
 
   it('drops the oldest finished jobs rather than growing without bound', () => {
     const store = new JobStore(100, 2);
-    const ids = ['a', 'b', 'c'].map(() => {
+    // Distinct finishedAt values, and deliberately not in creation order, so
+    // the assertion depends on the comparator rather than on sort stability.
+    const ids = [3000, 1000, 2000].map(finishedAt => {
       const job = store.create('testnet', 'eth_self_transfer');
-      store.update(job.id, { state: 'responded' });
+      store.update(job.id, { state: 'responded', timings: { finishedAt } });
       return job.id;
     });
     // Creating a fourth pushes the oldest finished job out.
     store.create('testnet', 'eth_self_transfer');
 
-    expect(store.view(ids[0])).toBeUndefined();
-    expect(store.view(ids[1])).toBeDefined();
+    // ids[1] finished earliest (1000), so it is the one dropped.
+    expect(store.view(ids[1])).toBeUndefined();
+    expect(store.view(ids[0])).toBeDefined();
     expect(store.view(ids[2])).toBeDefined();
   });
 

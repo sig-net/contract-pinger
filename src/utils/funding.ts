@@ -58,9 +58,29 @@ export const sweepFunding = async ({
       if (balance >= minBalanceWei) continue;
 
       const shortfall = topupWei - balance;
+      if (shortfall <= 0n) {
+        // Reachable when the top-up target is set below the minimum, which
+        // would otherwise send a negative value and throw on every sweep
+        // while the worker never reaches the minimum it is aimed at.
+        result.errors.push({
+          path: worker.path,
+          message: `SIG_BIDIRECTIONAL_TOPUP_WEI (${topupWei}) is not above this address's balance (${balance}); it can never reach SIG_BIDIRECTIONAL_MIN_BALANCE_WEI (${minBalanceWei})`,
+        });
+        result.stillUnderfunded.push(worker.path);
+        continue;
+      }
+
       // `evmSk` rotates on each read, so each top-up draws from the next key.
       const key = env.evmSk;
       if (!key) {
+        // Recorded rather than silently counted as underfunded: the cause is a
+        // missing SIG_EVM_SK_n, not a balance, and the rotation visits all
+        // five indices regardless of how many are configured.
+        result.errors.push({
+          path: worker.path,
+          message:
+            'No funding key available for this rotation slot. All of SIG_EVM_SK_1..5 must be set; they may share a value.',
+        });
         result.stillUnderfunded.push(worker.path);
         continue;
       }
@@ -81,7 +101,10 @@ export const sweepFunding = async ({
         amountWei: shortfall,
         txHash,
       });
-      pool.setBalance(worker.path, topupWei, minBalanceWei);
+      // The recorded balance is deliberately left at its observed value. The
+      // top-up is only broadcast here, not mined, and marking the worker
+      // funded now would hand it out for the 12-60s until it lands, where it
+      // would fail the gas preflight against its real balance.
     } catch (error) {
       result.errors.push({
         path: worker.path,

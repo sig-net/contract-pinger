@@ -30,7 +30,11 @@ const latenciesFor = (jobs) => ({
     signatureMs: summarize(collect(jobs, j => span(j.timings.signSentAt, j.timings.signatureAt))),
     confirmationMs: summarize(collect(jobs, j => span(j.timings.broadcastAt, j.timings.confirmedAt))),
     respondMs: summarize(collect(jobs, j => span(j.timings.confirmedAt, j.timings.respondedAt))),
-    totalMs: summarize(collect(jobs, j => span(j.timings.acceptedAt, j.timings.finishedAt))),
+    // Successes only. A failure also sets `finishedAt`, and pool-exhaustion
+    // failures finish in milliseconds, so including them drags the reported
+    // median of a tens-of-minutes round trip toward zero. The per-stage figures
+    // self-filter, since a failed job never reaches their closing timestamp.
+    totalMs: summarize(collect(jobs.filter(j => j.state === 'responded'), j => span(j.timings.acceptedAt, j.timings.finishedAt))),
 });
 const countBy = (values) => {
     const out = {};

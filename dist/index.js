@@ -179,8 +179,28 @@ app.post('/sign_bidirectional', async (req, res) => {
             return;
         }
         const { service } = resolved;
+        // Capacity is checked before the rate limiter so a rejected request does
+        // not consume an arrival slot. Once the job store is full it drains over
+        // tens of minutes, and charging every rejection against the per-minute
+        // budget would keep the limiter saturated with requests that were never
+        // accepted.
+        if (service.jobs.atCapacity()) {
+            // Jobs drain as their respond legs settle, so a fixed hint is the best
+            // available: the alternative is the caller guessing.
+            const retryAfterMs = 60_000;
+            res
+                .status(429)
+                .set('Retry-After', String(Math.ceil(retryAfterMs / 1000)))
+                .json({
+                error: 'Too many jobs in flight',
+                activeJobs: service.jobs.activeCount,
+                maxJobs: (0, useEnv_1.useEnv)().bidirectional.maxJobs,
+                retryAfterMs,
+            });
+            return;
+        }
         // Arrival rate is capped separately from concurrency: a job holds its
-        // address for under a minute but stays alive for up to thirty-five, so
+        // address for about a minute but stays alive for up to thirty-five, so
         // an unbounded rate piles up respond waits long after the address pool
         // has stopped being the bottleneck.
         if (!service.limiter.tryAcquire()) {
@@ -192,14 +212,6 @@ app.post('/sign_bidirectional', async (req, res) => {
                 error: 'Rate limit exceeded',
                 limitPerMinute: (0, useEnv_1.useEnv)().bidirectional.maxRequestsPerMinute,
                 retryAfterMs,
-            });
-            return;
-        }
-        if (service.jobs.atCapacity()) {
-            res.status(429).json({
-                error: 'Too many jobs in flight',
-                activeJobs: service.jobs.activeCount,
-                maxJobs: (0, useEnv_1.useEnv)().bidirectional.maxJobs,
             });
             return;
         }
@@ -236,6 +248,9 @@ app.get('/sign_bidirectional/workers', async (req, res) => {
                 balanceWei: w.balanceWei.toString(),
                 busy: w.busy,
                 underfunded: w.underfunded,
+                // Set when a broadcast transaction was never seen confirmed; the
+                // address is withheld until the chain moves past that nonce.
+                pendingNonce: w.pendingNonce,
                 leases: w.leases,
             })),
         });

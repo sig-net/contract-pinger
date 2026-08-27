@@ -121,6 +121,11 @@ const main = async () => {
 
   // --- Poll ---------------------------------------------------------------
   const finished = new Map<string, any>();
+  // A job the server no longer knows about — the store is in memory, so a
+  // restart or a prune loses it — would otherwise be polled forever, since
+  // completion is the only exit condition.
+  const missing = new Map<string, number>();
+  const MAX_MISSES = 5;
 
   while (finished.size < jobIds.length) {
     await sleep(opts.pollMs);
@@ -135,7 +140,19 @@ const main = async () => {
       const res = await fetch(`${opts.url}/sign_bidirectional/${id}`, {
         headers,
       });
-      if (!res.ok) continue;
+      if (!res.ok) {
+        const misses = (missing.get(id) ?? 0) + 1;
+        missing.set(id, misses);
+        if (misses >= MAX_MISSES) {
+          finished.set(id, {
+            state: 'failed',
+            failureReason: 'lost_by_server',
+            error: `Job not found after ${MAX_MISSES} polls (server restarted, or the record was pruned)`,
+          });
+        }
+        continue;
+      }
+      missing.delete(id);
       const job = await res.json();
       states[job.state] = (states[job.state] ?? 0) + 1;
       if (job.state === 'responded' || job.state === 'failed') {

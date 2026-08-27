@@ -38,7 +38,7 @@ class BidirectionalService {
     jobs;
     limiter;
     client;
-    addressesReady = false;
+    addressesReady;
     sweepTimer;
     constructor(environment, rpcUrl) {
         this.environment = environment;
@@ -61,18 +61,26 @@ class BidirectionalService {
      * transaction that silently never mines half an hour later.
      */
     async ensureAddresses() {
-        if (this.addressesReady)
-            return;
-        const { chainSigContract, keypair } = this.solana();
-        for (const worker of this.pool.all()) {
-            const address = await (0, derivation_1.deriveEthAddress)({
-                chainSigContract,
-                predecessor: keypair.publicKey.toString(),
-                path: worker.path,
-            });
-            this.pool.setAddress(worker.path, address);
-        }
-        this.addressesReady = true;
+        // The in-flight promise is memoized rather than a completion flag: a burst
+        // of jobs at start would otherwise each run the whole derivation loop
+        // before any of them finished setting the flag.
+        this.addressesReady ??= (async () => {
+            const { chainSigContract, keypair } = this.solana();
+            for (const worker of this.pool.all()) {
+                const address = await (0, derivation_1.deriveEthAddress)({
+                    chainSigContract,
+                    predecessor: keypair.publicKey.toString(),
+                    path: worker.path,
+                });
+                this.pool.setAddress(worker.path, address);
+            }
+        })().catch(error => {
+            // Not cached on failure, so a transient RPC error does not permanently
+            // leave the pool without addresses.
+            this.addressesReady = undefined;
+            throw error;
+        });
+        return this.addressesReady;
     }
     async refreshBalances() {
         const { minBalanceWei } = (0, useEnv_1.useEnv)().bidirectional;
@@ -81,6 +89,13 @@ class BidirectionalService {
                 continue;
             const balance = await this.client.getBalance({ address: worker.address });
             this.pool.setBalance(worker.path, balance, minBalanceWei);
+            if (worker.pendingNonce !== undefined) {
+                const latest = await this.client.getTransactionCount({
+                    address: worker.address,
+                    blockTag: 'latest',
+                });
+                this.pool.reconcile(worker.path, latest);
+            }
         }
     }
     async sweep() {
@@ -273,6 +288,10 @@ class BidirectionalService {
                 });
             }
             catch (error) {
+                // Broadcast succeeded but the outcome is unknown. `latest` still
+                // reports the old nonce while the transaction is pending, so handing
+                // this address to another job would sign the same nonce twice.
+                this.pool.quarantine(worker.path, built.nonce);
                 this.jobs.fail(job.id, 'confirmation_timeout', error);
                 return;
             }
@@ -305,7 +324,6 @@ class BidirectionalService {
                 this.jobs.fail(job.id, 'respond_mismatch', new Error(`Expected ${bidirectionalTx_1.EXPECTED_SERIALIZED_OUTPUT}, got ${serializedOutput}`));
                 return;
             }
-            this.assertRespondSigned(respond.signature, worker.path);
             this.jobs.update(job.id, {
                 state: 'responded',
                 timings: { finishedAt: Date.now() },
@@ -315,21 +333,6 @@ class BidirectionalService {
             releaseLease();
             // No-op once both have settled; tears down the subscriptions otherwise.
             watches.abort();
-        }
-    }
-    /**
-     * Assert the respond carried a signature at all.
-     *
-     * Deliberately weaker than it sounds. Verifying *whose* signature it is
-     * would need the key the MPC signs respond payloads with, and that is not
-     * derivable from anything this service holds — on Ethereum the responses
-     * come from the nodes' own accounts, which is a different key schedule from
-     * the request path. Until that is pinned down, presence is the only claim
-     * this can honestly make, so it does not pretend to more.
-     */
-    assertRespondSigned(signature, path) {
-        if (!signature) {
-            throw new Error(`respondBidirectionalEvent for path ${path} carried no signature`);
         }
     }
 }

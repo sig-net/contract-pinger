@@ -8,9 +8,26 @@ const getNextEvmSk = (): string => {
   ] as string;
 };
 
-const num = (value: string | undefined, fallback: number): number => {
+/**
+ * `min` defaults to 1 because most of these are durations, where zero is a
+ * mistake. Counters that can meaningfully be zero — freezing intake during an
+ * incident, for instance — pass `min: 0` so a deliberate 0 is not silently
+ * replaced by the fallback.
+ */
+const num = (value: string | undefined, fallback: number, min = 1): number => {
   const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  return Number.isFinite(parsed) && parsed >= min ? parsed : fallback;
+};
+
+/** Fails at load rather than inside a request handler. */
+const wei = (value: string | undefined, fallback: string, name: string) => {
+  try {
+    return BigInt(value ?? fallback);
+  } catch {
+    throw new Error(
+      `${name} must be an integer number of wei. Got "${value}".`
+    );
+  }
 };
 
 // The MPC waits for Ethereum finality before it reads a transaction's result
@@ -51,18 +68,19 @@ export const useEnv = () => {
     bidirectional: {
       // Concurrent address leases. Each path derives its own Ethereum address
       // with its own nonce space, and each needs its own gas balance.
-      paths: num(process.env.SIG_BIDIRECTIONAL_PATHS, 10),
+      paths: num(process.env.SIG_BIDIRECTIONAL_PATHS, 10, 0),
       pathPrefix: process.env.SIG_BIDIRECTIONAL_PATH_PREFIX || 'load',
       // Concurrent jobs including respond waits. Far larger than `paths`
       // because an address is released once its transaction mines, long
       // before the MPC finishes waiting for finality.
-      maxJobs: num(process.env.SIG_BIDIRECTIONAL_MAX_JOBS, 400),
+      maxJobs: num(process.env.SIG_BIDIRECTIONAL_MAX_JOBS, 400, 0),
       // Finished jobs kept for inspection and for /stats. Bounded so a
       // long-running instance does not accumulate them indefinitely.
       retainedJobs: num(process.env.SIG_BIDIRECTIONAL_RETAINED_JOBS, 1000),
       maxRequestsPerMinute: num(
         process.env.SIG_BIDIRECTIONAL_MAX_REQUESTS_PER_MIN,
-        10
+        10,
+        0
       ),
       txMode: process.env.SIG_BIDIRECTIONAL_TX_MODE || 'eth_self_transfer',
       erc20Address:
@@ -87,11 +105,15 @@ export const useEnv = () => {
       // to consume the nonce; a second guards against a shallow reorg
       // stranding the next transaction behind a nonce gap.
       confirmations: num(process.env.SIG_BIDIRECTIONAL_CONFIRMATIONS, 2),
-      minBalanceWei: BigInt(
-        process.env.SIG_BIDIRECTIONAL_MIN_BALANCE_WEI || '2000000000000000'
+      minBalanceWei: wei(
+        process.env.SIG_BIDIRECTIONAL_MIN_BALANCE_WEI,
+        '2000000000000000',
+        'SIG_BIDIRECTIONAL_MIN_BALANCE_WEI'
       ),
-      topupWei: BigInt(
-        process.env.SIG_BIDIRECTIONAL_TOPUP_WEI || '10000000000000000'
+      topupWei: wei(
+        process.env.SIG_BIDIRECTIONAL_TOPUP_WEI,
+        '10000000000000000',
+        'SIG_BIDIRECTIONAL_TOPUP_WEI'
       ),
       fundingSweepIntervalMs: num(
         process.env.SIG_BIDIRECTIONAL_FUNDING_SWEEP_MS,

@@ -146,6 +146,12 @@ An address is released back to the pool once its transaction confirms, not when
 the job finishes: the nonce is spent at mining time, long before the MPC
 finishes waiting for finality.
 
+If a broadcast transaction is never seen confirmed, the address is withheld
+instead — `latest` still reports the old nonce while a transaction is pending,
+so reusing it would sign that nonce twice. `GET /sign_bidirectional/workers`
+shows it as `pendingNonce`, and the address returns to service automatically
+once the chain moves past that nonce.
+
 The `Bidirectional Round Trip (manual)` workflow runs one round trip from CI on
 demand, which is a way to exercise a branch without local setup. It needs a
 funded derived address for the CI environment's own `SIG_SOL_SK`, since the
