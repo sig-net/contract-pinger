@@ -12,23 +12,9 @@ class NoWorkerAvailableError extends Error {
     }
 }
 exports.NoWorkerAvailableError = NoWorkerAvailableError;
-/**
- * A pool of derivation paths, each owning one Ethereum address.
- *
- * The pool exists because an Ethereum nonce is per-address and strictly
- * ordered. Two concurrent jobs on one path both read nonce N, both receive
- * valid signatures over different payloads, and the second broadcast is
- * rejected as underpriced — half an hour after the MPC work is finished.
- * Distinct paths give distinct addresses and therefore independent nonce
- * spaces.
- *
- * A lease covers only the window from reading the nonce to seeing the
- * transaction confirmed, *not* the respond wait. The nonce is consumed when
- * the transaction mines; the MPC's finality wait happens long after the
- * address is free to move on.
- */
 class WorkerPool {
     workers;
+    waiters = [];
     constructor(paths) {
         this.workers = paths.map(path => ({
             path,
@@ -73,10 +59,76 @@ class WorkerPool {
         candidate.lastLeasedAt = Date.now();
         return candidate;
     }
+    /**
+     * Wait for a free address rather than failing the moment none is idle.
+     *
+     * A lease lasts about as long as signing plus two confirmations, so a burst
+     * arriving while the previous one is still settling would otherwise fail
+     * outright — pool pressure as a cliff rather than a queue. Waiting turns it
+     * into lease-wait latency, which is measurable and tells you when to add
+     * addresses.
+     *
+     * Only `all_busy` waits. An empty wallet is not resolved by patience, so
+     * `all_underfunded` still fails immediately.
+     */
+    acquireWithin(timeoutMs) {
+        try {
+            return Promise.resolve(this.acquire());
+        }
+        catch (error) {
+            if (!(error instanceof NoWorkerAvailableError) ||
+                error.reason !== 'all_busy') {
+                return Promise.reject(error);
+            }
+        }
+        return new Promise((resolve, reject) => {
+            const timer = setTimeout(() => {
+                const i = this.waiters.indexOf(waiter);
+                if (i >= 0)
+                    this.waiters.splice(i, 1);
+                reject(new NoWorkerAvailableError('all_busy'));
+            }, timeoutMs);
+            const waiter = {
+                resolve: worker => {
+                    clearTimeout(timer);
+                    resolve(worker);
+                },
+                reject: error => {
+                    clearTimeout(timer);
+                    reject(error);
+                },
+            };
+            this.waiters.push(waiter);
+        });
+    }
     release(path) {
         const worker = this.workers.find(w => w.path === path);
         if (worker)
             worker.busy = false;
+        this.handOff();
+    }
+    /**
+     * Give freed addresses to anyone waiting, before a new arrival can take one.
+     */
+    handOff() {
+        while (this.waiters.length > 0) {
+            let worker;
+            try {
+                worker = this.acquire();
+            }
+            catch {
+                return; // nothing available; the waiters stay queued
+            }
+            this.waiters.shift().resolve(worker);
+        }
+    }
+    /** Abandon anyone still waiting — used when the process is shutting down. */
+    rejectWaiters(error) {
+        while (this.waiters.length > 0)
+            this.waiters.shift().reject(error);
+    }
+    get waiting() {
+        return this.waiters.length;
     }
     /**
      * Withhold an address whose broadcast transaction was never seen confirmed.

@@ -44,8 +44,14 @@ export class NoWorkerAvailableError extends Error {
  * the transaction mines; the MPC's finality wait happens long after the
  * address is free to move on.
  */
+interface Waiter {
+  resolve: (worker: Worker) => void;
+  reject: (error: Error) => void;
+}
+
 export class WorkerPool {
   private readonly workers: Worker[];
+  private readonly waiters: Waiter[] = [];
 
   constructor(paths: string[]) {
     this.workers = paths.map(path => ({
@@ -101,9 +107,79 @@ export class WorkerPool {
     return candidate;
   }
 
+  /**
+   * Wait for a free address rather than failing the moment none is idle.
+   *
+   * A lease lasts about as long as signing plus two confirmations, so a burst
+   * arriving while the previous one is still settling would otherwise fail
+   * outright — pool pressure as a cliff rather than a queue. Waiting turns it
+   * into lease-wait latency, which is measurable and tells you when to add
+   * addresses.
+   *
+   * Only `all_busy` waits. An empty wallet is not resolved by patience, so
+   * `all_underfunded` still fails immediately.
+   */
+  acquireWithin(timeoutMs: number): Promise<Worker> {
+    try {
+      return Promise.resolve(this.acquire());
+    } catch (error) {
+      if (
+        !(error instanceof NoWorkerAvailableError) ||
+        error.reason !== 'all_busy'
+      ) {
+        return Promise.reject(error as Error);
+      }
+    }
+
+    return new Promise<Worker>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        const i = this.waiters.indexOf(waiter);
+        if (i >= 0) this.waiters.splice(i, 1);
+        reject(new NoWorkerAvailableError('all_busy'));
+      }, timeoutMs);
+
+      const waiter: Waiter = {
+        resolve: worker => {
+          clearTimeout(timer);
+          resolve(worker);
+        },
+        reject: error => {
+          clearTimeout(timer);
+          reject(error);
+        },
+      };
+      this.waiters.push(waiter);
+    });
+  }
+
   release(path: string): void {
     const worker = this.workers.find(w => w.path === path);
     if (worker) worker.busy = false;
+    this.handOff();
+  }
+
+  /**
+   * Give freed addresses to anyone waiting, before a new arrival can take one.
+   */
+  private handOff(): void {
+    while (this.waiters.length > 0) {
+      let worker: Worker;
+      try {
+        worker = this.acquire();
+      } catch {
+        return; // nothing available; the waiters stay queued
+      }
+      this.waiters.shift()!.resolve(worker);
+    }
+  }
+
+  /** Abandon anyone still waiting — used when the process is shutting down. */
+  rejectWaiters(error: Error): void {
+    while (this.waiters.length > 0) this.waiters.shift()!.reject(error);
+  }
+
+  get waiting(): number {
+    return this.waiters.length;
   }
 
   /**

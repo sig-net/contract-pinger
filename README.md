@@ -140,6 +140,12 @@ confirmations, and stays alive for as long as the MPC takes to see finality. So
 `PATHS` sets sustainable throughput while `MAX_JOBS` bounds how many respond
 waits pile up.
 
+A job waits up to `SIG_BIDIRECTIONAL_LEASE_WAIT_MS` for a free address rather
+than failing when none is idle. A lease runs about as long as signing plus two
+confirmations, so bursts arriving mid-lease would otherwise fail outright —
+pool pressure as a cliff instead of a queue. Rising `lease wait` in the load
+driver's output is the signal to add addresses.
+
 `MAX_JOBS` is the one to watch. Each live job runs its own event subscription
 and backfill loop against the Solana endpoint, because signet.js has no shared
 dispatcher, so concurrency is paid in RPC requests. At 10 jobs/minute with a

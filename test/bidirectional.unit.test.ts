@@ -102,6 +102,36 @@ describe('WorkerPool', () => {
     expect(pool.acquire().path).toBe(leased[0].path);
   });
 
+  it('queues for a free address instead of failing while one is in use', async () => {
+    // Leases run about as long as signing plus two confirmations, so a burst
+    // arriving mid-lease would otherwise fail outright rather than waiting.
+    const leased = [pool.acquire(), pool.acquire(), pool.acquire()];
+    const queued = pool.acquireWithin(5_000);
+    expect(pool.waiting).toBe(1);
+
+    pool.release(leased[1].path);
+    await expect(queued).resolves.toMatchObject({ path: leased[1].path });
+    expect(pool.waiting).toBe(0);
+  });
+
+  it('gives up waiting rather than queueing forever', async () => {
+    [pool.acquire(), pool.acquire(), pool.acquire()];
+    await expect(pool.acquireWithin(20)).rejects.toThrowError(
+      NoWorkerAvailableError
+    );
+    expect(pool.waiting).toBe(0);
+  });
+
+  it('does not wait when the problem is funding rather than contention', async () => {
+    // Patience does not refill a wallet, so this still fails immediately.
+    pool.all().forEach(w => pool.setBalance(w.path, 0n, 1n));
+    const started = Date.now();
+    await expect(pool.acquireWithin(10_000)).rejects.toThrowError(
+      NoWorkerAvailableError
+    );
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
   it('reports why it refused: every worker busy vs every worker underfunded', () => {
     const leased = [pool.acquire(), pool.acquire(), pool.acquire()];
     try {

@@ -99,6 +99,9 @@ export const buildStats = (service: BidirectionalService) => {
     pool: {
       size: service.pool.size,
       busy: service.pool.all().filter(w => w.busy).length,
+      // Jobs parked for an address. Rising here means the pool is the
+      // bottleneck, which lease-wait latency then quantifies.
+      waiting: service.pool.waiting,
       underfunded: service.pool.all().filter(w => w.underfunded).length,
     },
     byMode,

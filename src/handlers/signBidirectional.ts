@@ -240,7 +240,7 @@ export class BidirectionalService {
 
       // --- Steps 1-2: derive and preflight -------------------------------
       abortIfShuttingDown(); // before taking an address
-      worker = this.pool.acquire();
+      worker = await this.pool.acquireWithin(bidirectional.leaseWaitMs);
       this.jobs.update(job.id, {
         path: worker.path,
         derivedAddress: worker.address,
@@ -475,7 +475,16 @@ export class BidirectionalService {
       // safe: the signature wait has already settled, so only the respond
       // watcher is still listening.
       const respondDeadline = setTimeout(
-        () => watches.abort(),
+        () =>
+          // Aborting with a reason: signet.js rejects with `signal.reason`, so
+          // without one the job records "This operation was aborted", which
+          // says nothing about which of the three waits gave up or when.
+          watches.abort(
+            new Error(
+              `respondBidirectionalEvent not received within ` +
+                `${bidirectional.respondTimeoutMs}ms of confirmation`
+            )
+          ),
         bidirectional.respondTimeoutMs
       );
       respondDeadline.unref?.();
@@ -536,6 +545,11 @@ export const abortActiveJobs = (): number => {
   const count = activeJobs.size;
   for (const controller of activeJobs) controller.abort();
   activeJobs.clear();
+  // Jobs parked waiting for an address would otherwise sit until their wait
+  // expired, holding the process open past its grace period.
+  for (const service of services.values()) {
+    service.pool.rejectWaiters(new Error('Process is shutting down'));
+  }
   return count;
 };
 
