@@ -85,6 +85,8 @@ export const buildStats = (service: BidirectionalService) => {
     jobs: {
       total: jobs.length,
       active: service.jobs.activeCount,
+      awaitingRespond: service.jobs.awaitingRespondCount,
+      live: service.jobs.liveCount,
       states: countBy(jobs.map(j => j.state as JobState)),
       failures: countBy(
         jobs

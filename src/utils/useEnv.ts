@@ -79,7 +79,16 @@ export const useEnv = () => {
       // loop — signet.js has no shared dispatcher — so concurrency here is
       // paid in requests against the Solana endpoint. Raising it needs either
       // a dispatcher upstream or an endpoint measured to take the load.
-      maxJobs: num(process.env.SIG_BIDIRECTIONAL_MAX_JOBS, 60, 0),
+      // Jobs holding an address and doing chain work. Bounded by the address
+      // pool and RPC throughput, so it sits near `paths` rather than near the
+      // arrival rate.
+      maxActiveJobs: num(process.env.SIG_BIDIRECTIONAL_MAX_ACTIVE_JOBS, 20, 0),
+      // Jobs past confirmation, waiting only on the MPC's respond. These hold
+      // an event subscription and nothing else, and there are far more of them:
+      // at 10/min with a 35-minute respond leg, roughly 350 are live at once.
+      // Bounded by what the Solana endpoint tolerates in subscriptions and
+      // backfill loops, since signet.js runs one of each per wait.
+      maxJobs: num(process.env.SIG_BIDIRECTIONAL_MAX_JOBS, 400, 0),
       // Finished jobs kept for inspection and for /stats. Bounded so a
       // long-running instance does not accumulate them indefinitely.
       retainedJobs: num(process.env.SIG_BIDIRECTIONAL_RETAINED_JOBS, 1000),

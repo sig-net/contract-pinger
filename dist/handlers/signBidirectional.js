@@ -53,7 +53,7 @@ class BidirectionalService {
         // for a testnet load run must not be able to point volume at it.
         const isMainnet = environment === 'mainnet';
         this.pool = new workerPool_1.WorkerPool((0, workerPool_1.buildPaths)(bidirectional.pathPrefix, isMainnet ? 1 : bidirectional.paths));
-        this.jobs = new store_1.JobStore(isMainnet ? 4 : bidirectional.maxJobs, bidirectional.retainedJobs);
+        this.jobs = new store_1.JobStore(isMainnet ? 2 : bidirectional.maxJobs, bidirectional.retainedJobs, isMainnet ? 1 : bidirectional.maxActiveJobs);
         this.limiter = new rateLimiter_1.RateLimiter(isMainnet ? 1 : bidirectional.maxRequestsPerMinute);
         this.client = (0, bidirectionalTx_1.createEthereumClient)(environment, rpcUrl);
     }

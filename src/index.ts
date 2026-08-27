@@ -199,17 +199,26 @@ app.post(
       // tens of minutes, and charging every rejection against the per-minute
       // budget would keep the limiter saturated with requests that were never
       // accepted.
-      if (service.jobs.atCapacity()) {
-        // Jobs drain as their respond legs settle, so a fixed hint is the best
-        // available: the alternative is the caller guessing.
-        const retryAfterMs = 60_000;
+      const full = service.jobs.atCapacity();
+      if (full) {
+        // Named rather than merged: an active rejection means the address pool
+        // or chain throughput is the limit, and a respond rejection means the
+        // subscription ceiling is. They call for different remedies.
+        const { bidirectional } = useEnv();
+        const retryAfterMs = full === 'active' ? 15_000 : 60_000;
         res
           .status(429)
           .set('Retry-After', String(Math.ceil(retryAfterMs / 1000)))
           .json({
-            error: 'Too many jobs in flight',
+            error:
+              full === 'active'
+                ? 'Too many jobs holding an address'
+                : 'Too many jobs awaiting the MPC respond',
+            limit: full,
             activeJobs: service.jobs.activeCount,
-            maxJobs: useEnv().bidirectional.maxJobs,
+            maxActiveJobs: bidirectional.maxActiveJobs,
+            awaitingRespond: service.jobs.awaitingRespondCount,
+            maxAwaitingRespond: bidirectional.maxJobs,
             retryAfterMs,
           });
         return;

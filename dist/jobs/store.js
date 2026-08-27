@@ -16,18 +16,21 @@ const durationsFor = (t) => {
 class JobStore {
     maxJobs;
     retained;
+    maxActiveJobs;
     jobs = new Map();
     /**
-     * @param maxJobs   concurrent unfinished jobs allowed
+     * @param maxActiveJobs jobs holding an address and doing chain work
+     * @param maxJobs   jobs awaiting the MPC's respond after confirmation
      * @param retained  finished jobs kept for inspection and aggregates. Without
      *                  a bound the map grows for the life of the process, and
      *                  `/stats` sorts across every job ever recorded, so both
      *                  memory and that endpoint degrade steadily on a
      *                  long-running instance.
      */
-    constructor(maxJobs, retained = 1000) {
+    constructor(maxJobs, retained = 1000, maxActiveJobs = 20) {
         this.maxJobs = maxJobs;
         this.retained = retained;
+        this.maxActiveJobs = maxActiveJobs;
     }
     /** Drops the oldest finished jobs once more than `retained` have piled up. */
     prune() {
@@ -39,16 +42,52 @@ class JobStore {
             .slice(0, finished.length - this.retained)
             .forEach(j => this.jobs.delete(j.id));
     }
+    /**
+     * Jobs holding an address and doing chain work.
+     *
+     * Counted apart from the finality wait because they are bounded by different
+     * things. Everything up to `confirmed` holds an address lease and a stream of
+     * RPC calls for about a minute; `confirmed` holds nothing but an event
+     * subscription, for half an hour. Lumping them lets the cheap ones — which
+     * vastly outnumber the others — crowd out the expensive ones, so a single cap
+     * of N means a sustainable rate of N over the respond budget rather than
+     * anything to do with how many addresses exist.
+     */
     get activeCount() {
         let active = 0;
         for (const job of this.jobs.values()) {
-            if (job.state !== 'responded' && job.state !== 'failed')
+            if (job.state !== 'responded' &&
+                job.state !== 'failed' &&
+                job.state !== 'confirmed') {
                 active += 1;
+            }
         }
         return active;
     }
+    /** Jobs whose transaction is buried and which only await the MPC's respond. */
+    get awaitingRespondCount() {
+        let waiting = 0;
+        for (const job of this.jobs.values()) {
+            if (job.state === 'confirmed')
+                waiting += 1;
+        }
+        return waiting;
+    }
+    get liveCount() {
+        return this.activeCount + this.awaitingRespondCount;
+    }
+    /**
+     * Which ceiling, if either, is reached. The distinction is the point: an
+     * active rejection says add addresses or slow arrivals, a respond rejection
+     * says the RPC's subscription ceiling is the limit and a shared dispatcher
+     * is what would raise it.
+     */
     atCapacity() {
-        return this.activeCount >= this.maxJobs;
+        if (this.activeCount >= this.maxActiveJobs)
+            return 'active';
+        if (this.awaitingRespondCount >= this.maxJobs)
+            return 'awaiting_respond';
+        return null;
     }
     create(environment, mode) {
         const job = {

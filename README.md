@@ -146,13 +146,20 @@ confirmations, so bursts arriving mid-lease would otherwise fail outright —
 pool pressure as a cliff instead of a queue. Rising `lease wait` in the load
 driver's output is the signal to add addresses.
 
-`MAX_JOBS` is the one to watch. Each live job runs its own event subscription
-and backfill loop against the Solana endpoint, because signet.js has no shared
-dispatcher, so concurrency is paid in RPC requests. At 10 jobs/minute with a
-35-minute respond leg an unbounded run would sit near 350 concurrent and
-rate-limit the endpoint it depends on — which surfaces as jobs timing out and
-looks like an MPC fault. The default is deliberately lower; over it, requests
-are rejected with `429` and a `Retry-After` rather than accepted and starved.
+Capacity is two ceilings rather than one, because a job's cost changes at
+confirmation. Before it, a job holds one of the derived addresses and a stream
+of chain calls for about a minute. After it, the address is released and the job
+holds only an event subscription, for up to thirty-five minutes. At 10
+jobs/minute that is roughly a dozen of the first kind against 350 of the second,
+so a single cap would let the cheap jobs crowd out the expensive ones — and its
+real sustainable rate would be the cap divided by the respond budget.
+
+`MAX_ACTIVE_JOBS` is bounded by the address pool and chain throughput.
+`MAX_JOBS` is bounded by what the Solana endpoint tolerates, since signet.js
+runs a subscription and a backfill loop per wait. A `429` names which ceiling
+it hit: the first says add addresses or slow arrivals, the second says the
+subscription ceiling is the limit, which is the point at which a shared event
+dispatcher becomes worth building.
 
 ### Funding
 

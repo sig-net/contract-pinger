@@ -77,8 +77,9 @@ export class BidirectionalService {
       buildPaths(bidirectional.pathPrefix, isMainnet ? 1 : bidirectional.paths)
     );
     this.jobs = new JobStore(
-      isMainnet ? 4 : bidirectional.maxJobs,
-      bidirectional.retainedJobs
+      isMainnet ? 2 : bidirectional.maxJobs,
+      bidirectional.retainedJobs,
+      isMainnet ? 1 : bidirectional.maxActiveJobs
     );
     this.limiter = new RateLimiter(
       isMainnet ? 1 : bidirectional.maxRequestsPerMinute

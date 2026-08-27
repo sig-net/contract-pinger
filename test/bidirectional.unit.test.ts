@@ -280,15 +280,37 @@ describe('JobStore', () => {
     expect(store.view(ids[2])).toBeDefined();
   });
 
-  it('counts only unfinished jobs toward capacity', () => {
-    const store = new JobStore(2);
-    const a = store.create('dev', 'eth_self_transfer');
-    store.create('dev', 'eth_self_transfer');
-    expect(store.atCapacity()).toBe(true);
+  it('counts jobs against the ceiling their work actually belongs to', () => {
+    // A job past confirmation holds an event subscription; one before it holds
+    // an address and a stream of RPC calls. Counting them together lets the
+    // cheap ones — which vastly outnumber the others — crowd out the expensive.
+    const store = new JobStore(3, 1000, 2);
+    const active = [1, 2].map(() =>
+      store.create('testnet', 'eth_self_transfer')
+    );
+    expect(store.atCapacity()).toBe('active');
 
-    store.update(a.id, { state: 'responded' });
-    expect(store.atCapacity()).toBe(false);
-    expect(store.activeCount).toBe(1);
+    // Confirming moves them off the active ceiling and onto the respond one.
+    active.forEach(j => store.update(j.id, { state: 'confirmed' }));
+    expect(store.activeCount).toBe(0);
+    expect(store.awaitingRespondCount).toBe(2);
+    expect(store.atCapacity()).toBe(null);
+
+    // Filling the respond ceiling is reported as its own limit.
+    store.update(store.create('testnet', 'eth_self_transfer').id, {
+      state: 'confirmed',
+    });
+    expect(store.atCapacity()).toBe('awaiting_respond');
+  });
+
+  it('stops counting a job once it reaches a terminal state', () => {
+    const store = new JobStore(10, 1000, 2);
+    const job = store.create('testnet', 'eth_self_transfer');
+    expect(store.liveCount).toBe(1);
+
+    store.update(job.id, { state: 'responded' });
+    expect(store.liveCount).toBe(0);
+    expect(store.atCapacity()).toBe(null);
   });
 });
 

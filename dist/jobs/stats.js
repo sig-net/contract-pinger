@@ -59,6 +59,8 @@ const buildStats = (service) => {
         jobs: {
             total: jobs.length,
             active: service.jobs.activeCount,
+            awaitingRespond: service.jobs.awaitingRespondCount,
+            live: service.jobs.liveCount,
             states: countBy(jobs.map(j => j.state)),
             failures: countBy(jobs
                 .map(j => j.failureReason)
