@@ -9,6 +9,7 @@
  *   pnpm fund --env testnet
  *   pnpm fund --env dev,testnet          # one run, one spend cap
  *   pnpm fund --env testnet --dry-run
+ *   pnpm fund --env testnet --url http://localhost:3001   # cross-check first
  *
  * Requires SIG_BIDIRECTIONAL_FUNDING_SK in the environment. Never pass a key
  * as an argument: argv is visible in `ps` and shell history.
@@ -55,6 +56,83 @@ const flag = (name: string) => process.argv.includes(`--${name}`);
 const fail = (message: string): never => {
   console.error(`\n✗ ${message}`);
   process.exit(1);
+};
+
+/**
+ * Compare the locally derived addresses against what the service reports.
+ *
+ * Five values have to agree across the process boundary — the path count and
+ * prefix, the root key, the requester key, and the balance minimum — and
+ * nothing else notices when they drift. The symptom is silent: ETH goes to
+ * addresses no job uses while the real pool starves, which reads as an MPC
+ * fault rather than a configuration one.
+ *
+ * The service's answer is never used as input; funding always targets the
+ * locally derived list. This only decides whether to proceed. An unreachable
+ * service is not a disagreement — deriving locally exists so funding works
+ * when the service is down — but a reachable one that disagrees stops the run
+ * before anything is spent.
+ */
+const crossCheck = async ({
+  url,
+  secret,
+  env,
+  derived,
+}: {
+  url: string;
+  secret: string;
+  env: Env;
+  derived: readonly DerivedWorker[];
+}): Promise<void> => {
+  let reported: { path: string; address: string }[];
+  try {
+    const res = await fetch(`${url}/sign_bidirectional/workers?env=${env}`, {
+      headers: { 'x-api-secret': secret },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) {
+      console.log(
+        `  ${env}: service returned ${res.status}, skipping cross-check`
+      );
+      return;
+    }
+    reported = (await res.json()).workers ?? [];
+  } catch {
+    console.log(`  ${env}: service unreachable, skipping cross-check`);
+    return;
+  }
+
+  const mine = new Map(derived.map(d => [d.path, d.address.toLowerCase()]));
+  const theirs = new Map(
+    reported.map(w => [w.path, (w.address ?? '').toLowerCase()])
+  );
+
+  const differences: string[] = [];
+  if (mine.size !== theirs.size) {
+    differences.push(
+      `this run derived ${mine.size} address(es), the service reports ${theirs.size} — ` +
+        'SIG_BIDIRECTIONAL_PATHS or SIG_BIDIRECTIONAL_PATH_PREFIX disagree'
+    );
+  }
+  for (const [path, address] of mine) {
+    const other = theirs.get(path);
+    if (other && other !== address) {
+      differences.push(
+        `${path}: this run derived ${address}, the service reports ${other} — ` +
+          'SIG_SOL_ROOT_PUBLIC_KEY or the requester key disagree'
+      );
+    }
+  }
+
+  if (differences.length > 0) {
+    fail(
+      `configuration drift against the ${env} service:\n  - ` +
+        differences.join('\n  - ') +
+        '\n\nNothing was sent. Funding the wrong addresses would starve the real ' +
+        'pool while reporting success.'
+    );
+  }
+  console.log(`  ${env}: agrees with the service (${mine.size} addresses)`);
 };
 
 const main = async () => {
@@ -201,6 +279,20 @@ const main = async () => {
     }
     console.log(`${env.padEnd(8)} program ${programId}`);
     workers.push(...derived.map(d => ({ ...d, env })));
+  }
+
+  // Reachable and disagreeing stops the run; unreachable does not.
+  const serviceUrl = arg('url', process.env.SIG_BIDIRECTIONAL_SERVICE_URL);
+  if (serviceUrl && process.env.API_SECRET) {
+    console.log('\nchecking against the service:');
+    for (const env of envs) {
+      await crossCheck({
+        url: serviceUrl,
+        secret: process.env.API_SECRET,
+        env,
+        derived: workers.filter(w => w.env === env),
+      });
+    }
   }
 
   const client = createEthereumClient(envs[0], rpcUrl!);

@@ -71,6 +71,13 @@ jobs:
       SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH || '0.02' }}
       SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH || '0.1' }}
       SIG_BIDIRECTIONAL_FUND_RESERVE_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_RESERVE_ETH || '0.02' }}
+      # Cross-check the derived addresses against the deployed service before
+      # spending. Five values must agree across the two — the path count and
+      # prefix, the root key, the requester key, and the balance minimum — and
+      # drift is otherwise silent: ETH goes to addresses no job uses while the
+      # real pool starves. Unreachable is not a failure; disagreeing is.
+      SIG_BIDIRECTIONAL_SERVICE_URL: ${{ vars.SIG_BIDIRECTIONAL_SERVICE_URL }}
+      API_SECRET: ${{ secrets.LT_PINGER_API_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

@@ -166,6 +166,14 @@ Every network is funded by one invocation rather than one per network: the
 spend caps govern a run, so a separate process per network would enforce each
 cap against its own total.
 
+Five values have to agree between the service and the sweep — `PATHS`,
+`PATH_PREFIX`, `SIG_SOL_ROOT_PUBLIC_KEY`, the requester key, and
+`MIN_BALANCE_WEI` — and drift between them is otherwise silent, sending ETH to
+addresses no job uses while the real pool starves. Pass `--url` (or set
+`SIG_BIDIRECTIONAL_SERVICE_URL`) and the sweep compares its derived addresses
+against what the service reports, refusing to spend when they disagree. An
+unreachable service is skipped rather than treated as a disagreement.
+
 The same script runs on a schedule as the `Fund Bidirectional Workers`
 workflow. It derives the addresses itself from public inputs rather than asking
 the service for them, so it neither trusts the service to name its own payees
