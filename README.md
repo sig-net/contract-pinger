@@ -91,7 +91,8 @@ This will automatically format your codebase according to the project's style ru
 `POST /sign_bidirectional` drives one full round trip: a `sign_bidirectional`
 request on Solana, an MPC signature, a broadcast on Sepolia, and the MPC
 reading that transaction's result back. It calls the chain-signatures program
-directly, so no vault program or deployment is involved.
+directly, so no vault program or deployment is involved. `dev` and `testnet`
+are supported; the Ethereum leg is Sepolia-only, so `mainnet` is rejected.
 
 It is asynchronous because the respond leg waits for Ethereum finality — up to
 thirty-five minutes — which no proxy will hold a connection open for. `POST`

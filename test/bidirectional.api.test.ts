@@ -57,12 +57,19 @@ describe('POST /sign_bidirectional validation', () => {
     ]);
   });
 
-  it('reports a bad mode even when no RPC URL is configured', async () => {
-    // Mode validation runs before service resolution, so a mode error is
-    // never masked by a missing SIG_ETH_RPC_URL_SEPOLIA.
+  it('reports a bad mode before it looks at the environment', async () => {
+    // Mode validation runs first, so a mode error is never masked by an
+    // unusable environment or a missing SIG_ETH_RPC_URL_SEPOLIA.
     const res = await post({ env: 'mainnet', mode: 'nonsense' });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/Invalid mode/);
+  });
+
+  it('rejects mainnet, which the Sepolia-only Ethereum leg cannot serve', async () => {
+    const res = await post({ env: 'mainnet' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Invalid or missing environment parameter');
+    expect(res.body.validEnvironments).toEqual(['dev', 'testnet']);
   });
 });
 
