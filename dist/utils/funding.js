@@ -14,7 +14,26 @@ const asHexKey = (key) => (key.startsWith('0x') ? key : `0x${key}`);
  * time someone remembered rather than a real setting. The service already
  * holds Sepolia ETH for the Ethereum ping path; this reuses those keys.
  */
-const sweepFunding = async ({ client, pool, rpcUrl, }) => {
+/**
+ * One sweep at a time across the whole process.
+ *
+ * The guard belongs here rather than on a service: every environment's sweep
+ * draws from the same SIG_EVM_SK_1..5 accounts, and the configuration
+ * explicitly allows those slots to share a key. Two services sweeping at once
+ * would read the same pending nonce on one wallet and have one top-up replace
+ * the other.
+ */
+let queue = Promise.resolve();
+const sweepFunding = (args) => {
+    // Queued rather than shared. Handing a second caller the first one's promise
+    // would return them a result for a different pool, leaving their own
+    // addresses unswept while reporting success.
+    const run = queue.then(() => runSweep(args), () => runSweep(args));
+    queue = run.catch(() => undefined);
+    return run;
+};
+exports.sweepFunding = sweepFunding;
+const runSweep = async ({ client, pool, rpcUrl, }) => {
     const env = (0, useEnv_1.useEnv)();
     const { minBalanceWei, topupWei } = env.bidirectional;
     const result = {
@@ -87,4 +106,3 @@ const sweepFunding = async ({ client, pool, rpcUrl, }) => {
     }
     return result;
 };
-exports.sweepFunding = sweepFunding;

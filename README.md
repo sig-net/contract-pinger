@@ -130,8 +130,15 @@ latency percentiles per stage.
 Sizing it: a job holds its address for roughly the time to sign plus two
 confirmations, and stays alive for as long as the MPC takes to see finality. So
 `PATHS` sets sustainable throughput while `MAX_JOBS` bounds how many respond
-waits pile up. At the default 10 jobs/minute, expect a few hundred jobs alive
-at once during a long run.
+waits pile up.
+
+`MAX_JOBS` is the one to watch. Each live job runs its own event subscription
+and backfill loop against the Solana endpoint, because signet.js has no shared
+dispatcher, so concurrency is paid in RPC requests. At 10 jobs/minute with a
+35-minute respond leg an unbounded run would sit near 350 concurrent and
+rate-limit the endpoint it depends on — which surfaces as jobs timing out and
+looks like an MPC fault. The default is deliberately lower; over it, requests
+are rejected with `429` and a `Retry-After` rather than accepted and starved.
 
 ### Funding
 

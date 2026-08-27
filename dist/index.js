@@ -383,6 +383,13 @@ if (require.main === module) {
     });
     process.on('SIGTERM', () => {
         console.log('SIGTERM signal received: closing HTTP server');
+        // Bidirectional jobs outlive the request that started them and hold event
+        // subscriptions and timers for as long as their budgets allow. Without
+        // this the listener closes but the process does not exit.
+        const abandoned = (0, signBidirectional_1.abortActiveJobs)();
+        if (abandoned > 0) {
+            console.log(`Abandoned ${abandoned} in-flight bidirectional job(s)`);
+        }
         server?.close(() => {
             console.log('HTTP server closed');
         });

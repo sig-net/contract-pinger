@@ -158,6 +158,10 @@ export class JobStore {
     const { timings, ...rest } = patch;
     Object.assign(job, rest);
     if (timings) job.timings = { ...job.timings, ...timings };
+    // Also pruned here, not only on create: a batch that finishes after the
+    // last job was submitted would otherwise hold every record until the next
+    // request arrived, leaving /stats reporting well outside its window.
+    if (job.state === 'responded' || job.state === 'failed') this.prune();
   }
 
   fail(id: string, reason: FailureReason, error: unknown): void {

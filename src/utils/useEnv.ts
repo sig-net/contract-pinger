@@ -70,10 +70,16 @@ export const useEnv = () => {
       // with its own nonce space, and each needs its own gas balance.
       paths: num(process.env.SIG_BIDIRECTIONAL_PATHS, 10, 0),
       pathPrefix: process.env.SIG_BIDIRECTIONAL_PATH_PREFIX || 'load',
-      // Concurrent jobs including respond waits. Far larger than `paths`
-      // because an address is released once its transaction mines, long
-      // before the MPC finishes waiting for finality.
-      maxJobs: num(process.env.SIG_BIDIRECTIONAL_MAX_JOBS, 400, 0),
+      // Concurrent jobs including respond waits. Larger than `paths`, since an
+      // address is released once its transaction mines, long before the MPC
+      // finishes waiting for finality.
+      //
+      // Bounded well below the arrival rate times the respond budget on
+      // purpose. Every live job runs its own event subscription and backfill
+      // loop — signet.js has no shared dispatcher — so concurrency here is
+      // paid in requests against the Solana endpoint. Raising it needs either
+      // a dispatcher upstream or an endpoint measured to take the load.
+      maxJobs: num(process.env.SIG_BIDIRECTIONAL_MAX_JOBS, 60, 0),
       // Finished jobs kept for inspection and for /stats. Bounded so a
       // long-running instance does not accumulate them indefinitely.
       retainedJobs: num(process.env.SIG_BIDIRECTIONAL_RETAINED_JOBS, 1000),

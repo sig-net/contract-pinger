@@ -159,6 +159,11 @@ export class BidirectionalService {
     return this.inFlightSweep;
   }
 
+  stopFundingSweeps(): void {
+    if (this.sweepTimer) clearInterval(this.sweepTimer);
+    this.sweepTimer = undefined;
+  }
+
   /** Periodic top-up so pool size stays a setting rather than a chore. */
   startFundingSweeps(): void {
     const { fundingSweepIntervalMs } = useEnv().bidirectional;
@@ -207,6 +212,7 @@ export class BidirectionalService {
     // respond timeout — up to thirty-five minutes after the job is already
     // recorded as failed, and against the same RPC every other job is using.
     const watches = new AbortController();
+    activeJobs.add(watches);
 
     const releaseLease = () => {
       if (worker && !leaseReleased) {
@@ -351,8 +357,12 @@ export class BidirectionalService {
           bidirectional.signatureTimeoutMs +
           bidirectional.ethConfirmTimeoutMs +
           bidirectional.respondTimeoutMs,
-        backfillIntervalMs: 15_000,
-        healthCheckIntervalMs: 15_000,
+        // Polled far less often than the signature leg. This one waits on
+        // Ethereum finality, so nothing can arrive for tens of minutes, and
+        // the interval is multiplied by every live job: the websocket
+        // subscription still delivers promptly, backfill is only the fallback.
+        backfillIntervalMs: 120_000,
+        healthCheckIntervalMs: 60_000,
         signal: watches.signal,
       });
       // Nothing awaits this until step 9; without a no-op handler a timeout
@@ -365,6 +375,11 @@ export class BidirectionalService {
       try {
         rsv = await signaturePromise;
       } catch (error) {
+        // signet.js exposes a signatureErrorEvent, but the Solana program does
+        // not define or emit one, so silence is the only failure signal the
+        // network gives and a timeout is the whole story. Watching for it
+        // would add a third subscription per job for an event that never
+        // arrives.
         this.jobs.fail(job.id, 'signature_timeout', error);
         return;
       }
@@ -483,9 +498,29 @@ export class BidirectionalService {
       releaseLease();
       // No-op once both have settled; tears down the subscriptions otherwise.
       watches.abort();
+      activeJobs.delete(watches);
     }
   }
 }
+
+/**
+ * Every in-flight job's watches, so shutdown can stop them.
+ *
+ * Jobs are detached from the request that started them and hold subscriptions
+ * and timers for as long as their budgets allow. Closing the HTTP listener
+ * alone leaves those alive, and the process stays up until the orchestrator
+ * loses patience and kills it.
+ */
+const activeJobs = new Set<AbortController>();
+
+/** Abandon every in-flight job. Their records stay, marked failed. */
+export const abortActiveJobs = (): number => {
+  const count = activeJobs.size;
+  for (const controller of activeJobs) controller.abort();
+  activeJobs.clear();
+  for (const service of services.values()) service.stopFundingSweeps();
+  return count;
+};
 
 const services = new Map<string, BidirectionalService>();
 
