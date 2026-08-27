@@ -209,13 +209,14 @@ const main = async () => {
   ];
 
   console.log('\nLatency (succeeded jobs):');
-  console.log('  stage           p50       p95       max');
+  console.log('  stage             min       p50       p95       max');
   for (const [label, key] of metrics) {
     const values = ok
       .map(j => j.durations?.[key])
       .filter((v): v is number => typeof v === 'number');
     console.log(
-      `  ${label.padEnd(14)} ${fmt(percentile(values, 50)).padStart(8)}  ` +
+      `  ${label.padEnd(14)} ${fmt(values.length ? Math.min(...values) : null).padStart(8)}  ` +
+        `${fmt(percentile(values, 50)).padStart(8)}  ` +
         `${fmt(percentile(values, 95)).padStart(8)}  ` +
         `${fmt(values.length ? Math.max(...values) : null).padStart(8)}`
     );

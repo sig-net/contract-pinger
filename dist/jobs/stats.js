@@ -11,6 +11,13 @@ const summarize = (values) => {
     const sorted = [...values].sort((a, b) => a - b);
     return {
         count: sorted.length,
+        // The floor, not just the middle. Sizing anything that skips work before a
+        // stage — a delayed respond watcher, say — needs the earliest the stage has
+        // ever completed, since a single case below the threshold is missed
+        // silently and recorded as a timeout. p05 shows whether that minimum is a
+        // lone outlier or the edge of a real cluster.
+        min: sorted.length > 0 ? sorted[0] : null,
+        p05: percentile(sorted, 5),
         p50: percentile(sorted, 50),
         p95: percentile(sorted, 95),
         max: sorted.length > 0 ? sorted[sorted.length - 1] : null,
