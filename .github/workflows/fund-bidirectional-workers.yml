@@ -43,6 +43,12 @@ jobs:
     timeout-minutes: 15
     environment: Pinger Test ENV
     strategy:
+      # One at a time. Workflow concurrency keeps separate runs apart but does
+      # not serialize matrix children, so parallel jobs would read the same
+      # nonce on the shared funding wallet and submit colliding transactions —
+      # and each would enforce the per-run cap against its own total, letting
+      # combined spend reach twice the intended limit.
+      max-parallel: 1
       # Separate derivation sets: each environment's program address pairs to a
       # different root key, so the addresses do not overlap.
       matrix:
@@ -58,6 +64,10 @@ jobs:
       SIG_BIDIRECTIONAL_REQUESTER_PUBKEY: ${{ vars.SIG_BIDIRECTIONAL_REQUESTER_PUBKEY }}
       SIG_BIDIRECTIONAL_PATHS: ${{ vars.SIG_BIDIRECTIONAL_PATHS || '10' }}
       SIG_BIDIRECTIONAL_PATH_PREFIX: ${{ vars.SIG_BIDIRECTIONAL_PATH_PREFIX || 'load' }}
+      # Must match the deployed service. Unset there and unset here both mean
+      # "pair the root key to the program address"; set on one side only
+      # derives a different address set entirely.
+      SIG_SOL_ROOT_PUBLIC_KEY: ${{ vars.SIG_SOL_ROOT_PUBLIC_KEY }}
       # Thresholds are variables, not constants: the right band depends on the
       # measured gas of the enabled transaction mode and on how long a pool must
       # survive without a sweep.

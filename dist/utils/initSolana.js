@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getSharedSolana = exports.initSolana = void 0;
+exports.getSharedSolana = exports.initSolana = exports.buildChainSignatureContract = void 0;
 const web3_js_1 = require("@solana/web3.js");
 const anchor = __importStar(require("@coral-xyz/anchor"));
 const signet_js_1 = require("signet.js");
@@ -84,7 +84,15 @@ const asRootPublicKey = (value) => {
         `public key starting 02, 03 or 04. Got "${value.slice(0, 12)}...". ` +
         `Leave it unset to pair the root key to the program address instead.`);
 };
-const buildContract = ({ contractAddress, provider, requesterAddress, disableRetryOnRateLimit = false, }) => {
+/**
+ * Build a chain-signatures contract the way the service does.
+ *
+ * Exported so `scripts/fund-workers.ts` derives against the same root key.
+ * The override enters here, and a funding script that constructed its own
+ * contract would silently fall back to the program's default key and send ETH
+ * to a different address set than the one the workers actually use.
+ */
+const buildChainSignatureContract = ({ contractAddress, provider, requesterAddress, disableRetryOnRateLimit = false, }) => {
     const { solRootPublicKey } = (0, useEnv_1.useEnv)();
     return new signet_js_1.contracts.solana.ChainSignatureContract({
         provider,
@@ -103,10 +111,11 @@ const buildContract = ({ contractAddress, provider, requesterAddress, disableRet
         },
     });
 };
+exports.buildChainSignatureContract = buildChainSignatureContract;
 const initSolana = ({ contractAddress, environment, }) => {
     const { provider } = buildProvider(environment);
     const requesterKeypair = web3_js_1.Keypair.generate();
-    const chainSigContract = buildContract({
+    const chainSigContract = (0, exports.buildChainSignatureContract)({
         contractAddress,
         provider,
         requesterAddress: requesterKeypair.publicKey.toString(),
@@ -134,7 +143,7 @@ const getSharedSolana = ({ contractAddress, environment, }) => {
     const context = {
         provider,
         keypair,
-        chainSigContract: buildContract({
+        chainSigContract: (0, exports.buildChainSignatureContract)({
             contractAddress,
             provider,
             requesterAddress: keypair.publicKey.toString(),

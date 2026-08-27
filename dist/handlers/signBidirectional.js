@@ -91,6 +91,24 @@ class BidirectionalService {
         await this.reconcileQuarantined();
     }
     /**
+     * Re-read the balance of any address currently held back as underfunded.
+     *
+     * Nothing inside the service tops these up any more, and an underfunded
+     * worker is never acquired, so its balance would never be looked at again —
+     * the pool would shed an address permanently on each low-balance event and
+     * end up reporting all_workers_underfunded against a pool the funding
+     * workflow had already refilled. Costs nothing while none are short.
+     */
+    async refreshUnderfunded() {
+        const { minBalanceWei } = (0, useEnv_1.useEnv)().bidirectional;
+        for (const worker of this.pool.all()) {
+            if (!worker.underfunded || worker.address === '0x')
+                continue;
+            const balance = await this.client.getBalance({ address: worker.address });
+            this.pool.setBalance(worker.path, balance, minBalanceWei);
+        }
+    }
+    /**
      * Release addresses whose outstanding transaction has resolved, either way.
      *
      * Run before every acquisition rather than only from the diagnostics
@@ -154,6 +172,7 @@ class BidirectionalService {
         try {
             await this.ensureAddresses();
             await this.reconcileQuarantined();
+            await this.refreshUnderfunded();
             // --- Steps 1-2: derive and preflight -------------------------------
             worker = this.pool.acquire();
             this.jobs.update(job.id, {

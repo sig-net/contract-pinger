@@ -15,7 +15,7 @@
 import 'dotenv/config';
 import { Connection, Keypair, PublicKey } from '@solana/web3.js';
 import * as anchor from '@coral-xyz/anchor';
-import { constants, contracts } from 'signet.js';
+import { constants } from 'signet.js';
 import {
   createWalletClient,
   formatEther,
@@ -27,6 +27,7 @@ import { privateKeyToAccount } from 'viem/accounts';
 import { sepolia } from 'viem/chains';
 
 import { deriveWorkerAddresses } from '../src/utils/derivation';
+import { buildChainSignatureContract } from '../src/utils/initSolana';
 import {
   createSepoliaClient,
   SEPOLIA_CHAIN_ID,
@@ -126,16 +127,18 @@ const main = async () => {
   if (!solanaRpc) fail('SIG_SOL_RPC_URL_DEV is not set');
 
   const programId = constants.CONTRACT_ADDRESSES.SOLANA[ENVIRONMENTS[env]];
-  // The provider is never used for derivation — `getDerivedPublicKey` is pure
-  // crypto — but constructing the contract is what pairs the root key to the
-  // program address, which is the step that must not be reimplemented here.
-  const chainSigContract = new contracts.solana.ChainSignatureContract({
+  // Built through the service's own constructor, not a local equivalent. That
+  // is where SIG_SOL_ROOT_PUBLIC_KEY is applied: a contract assembled here
+  // would fall back to the key paired with the program address and derive an
+  // entirely different address set, funding addresses no worker uses while the
+  // real ones ran dry. The provider is never used — derivation is pure crypto.
+  const chainSigContract = buildChainSignatureContract({
+    contractAddress: programId,
     provider: new anchor.AnchorProvider(
       new Connection(solanaRpc!, 'confirmed'),
       new anchor.Wallet(Keypair.generate()),
       {}
     ),
-    programId,
   });
 
   const paths = buildPaths(pathPrefix, expectedWorkers);
@@ -164,6 +167,9 @@ const main = async () => {
   console.log(`environment : ${env}`);
   console.log(`program     : ${programId}`);
   console.log(`requester   : ${requester}`);
+  console.log(
+    `root key    : ${process.env.SIG_SOL_ROOT_PUBLIC_KEY ? 'SIG_SOL_ROOT_PUBLIC_KEY override' : 'paired to the program address'}`
+  );
   console.log(`funding from: ${account.address}`);
   console.log(
     `band        : ${formatEther(minBalance)} → ${formatEther(topUpTo)} ETH\n`

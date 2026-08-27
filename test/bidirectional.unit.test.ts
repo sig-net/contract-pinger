@@ -157,6 +157,17 @@ describe('WorkerPool', () => {
     expect(pool.quarantined()).toHaveLength(0);
   });
 
+  it('takes an underfunded worker back once its balance recovers', () => {
+    // Nothing inside the service tops these up, and an underfunded worker is
+    // never acquired — so if its balance is not re-read somewhere, the pool
+    // sheds an address permanently on every low-balance event.
+    pool.all().forEach(w => pool.setBalance(w.path, 0n, 1n));
+    expect(() => pool.acquire()).toThrowError(NoWorkerAvailableError);
+
+    pool.setBalance('load-1', 10n, 1n);
+    expect(pool.acquire().path).toBe('load-1');
+  });
+
   it('skips underfunded workers rather than handing out a job that cannot broadcast', () => {
     pool.setBalance('load-0', 0n, 1n);
     pool.setBalance('load-1', 0n, 1n);

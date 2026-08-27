@@ -67,7 +67,15 @@ const asRootPublicKey = (value: string): RootPublicKey => {
   );
 };
 
-const buildContract = ({
+/**
+ * Build a chain-signatures contract the way the service does.
+ *
+ * Exported so `scripts/fund-workers.ts` derives against the same root key.
+ * The override enters here, and a funding script that constructed its own
+ * contract would silently fall back to the program's default key and send ETH
+ * to a different address set than the one the workers actually use.
+ */
+export const buildChainSignatureContract = ({
   contractAddress,
   provider,
   requesterAddress,
@@ -106,7 +114,7 @@ export const initSolana = ({
 }) => {
   const { provider } = buildProvider(environment);
   const requesterKeypair = Keypair.generate();
-  const chainSigContract = buildContract({
+  const chainSigContract = buildChainSignatureContract({
     contractAddress,
     provider,
     requesterAddress: requesterKeypair.publicKey.toString(),
@@ -150,7 +158,7 @@ export const getSharedSolana = ({
   const context: SharedSolanaContext = {
     provider,
     keypair,
-    chainSigContract: buildContract({
+    chainSigContract: buildChainSignatureContract({
       contractAddress,
       provider,
       requesterAddress: keypair.publicKey.toString(),
