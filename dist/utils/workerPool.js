@@ -87,16 +87,24 @@ class WorkerPool {
             worker.pendingNonce = nonce;
     }
     /**
-     * Return a quarantined address to service once the chain has moved past the
-     * nonce in question — whether the transaction eventually mined or was
-     * dropped, the next nonce is knowable again either way.
+     * Return a quarantined address to service once nothing is outstanding from
+     * it.
+     *
+     * Keyed on whether the account has any unmined transaction, not on the nonce
+     * advancing: a dropped transaction leaves `latest` exactly where it was, so a
+     * nonce comparison alone would quarantine that address forever. Comparing the
+     * pending and latest counts covers both endings — mined moves both forward,
+     * dropped leaves both equal, and only a still-pending transaction keeps them
+     * apart.
      */
-    reconcile(path, latestNonce) {
+    reconcile(path, hasOutstanding) {
         const worker = this.workers.find(w => w.path === path);
-        if (worker?.pendingNonce !== undefined &&
-            latestNonce > worker.pendingNonce) {
+        if (worker?.pendingNonce !== undefined && !hasOutstanding) {
             worker.pendingNonce = undefined;
         }
+    }
+    quarantined() {
+        return this.workers.filter(w => w.pendingNonce !== undefined);
     }
 }
 exports.WorkerPool = WorkerPool;

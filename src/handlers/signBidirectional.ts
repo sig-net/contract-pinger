@@ -107,14 +107,31 @@ export class BidirectionalService {
       if (worker.address === ('0x' as Hex)) continue;
       const balance = await this.client.getBalance({ address: worker.address });
       this.pool.setBalance(worker.path, balance, minBalanceWei);
+    }
+    await this.reconcileQuarantined();
+  }
 
-      if (worker.pendingNonce !== undefined) {
-        const latest = await this.client.getTransactionCount({
+  /**
+   * Release addresses whose outstanding transaction has resolved, either way.
+   *
+   * Run before every acquisition rather than only from the diagnostics
+   * endpoint: a quarantine that only lifts when somebody happens to call
+   * `/workers` would shrink the pool silently on an unattended run. Costs
+   * nothing when nothing is quarantined.
+   */
+  private async reconcileQuarantined(): Promise<void> {
+    for (const worker of this.pool.quarantined()) {
+      const [latest, pending] = await Promise.all([
+        this.client.getTransactionCount({
           address: worker.address,
           blockTag: 'latest',
-        });
-        this.pool.reconcile(worker.path, latest);
-      }
+        }),
+        this.client.getTransactionCount({
+          address: worker.address,
+          blockTag: 'pending',
+        }),
+      ]);
+      this.pool.reconcile(worker.path, pending > latest);
     }
   }
 
@@ -185,6 +202,7 @@ export class BidirectionalService {
 
     try {
       await this.ensureAddresses();
+      await this.reconcileQuarantined();
 
       // --- Steps 1-2: derive and preflight -------------------------------
       worker = this.pool.acquire();
@@ -194,17 +212,49 @@ export class BidirectionalService {
         timings: { leaseAcquiredAt: Date.now() },
       });
 
-      const built = await buildTransaction({
-        client: this.client,
-        mode: job.mode,
-        from: worker.address,
-        erc20Address: bidirectional.erc20Address as Hex,
-      });
-
-      // Checked after the build because the gas price is only known now.
+      // Balance is read before the build, not after. `estimateGas` is
+      // rejected outright by many nodes when the sender cannot cover the
+      // transaction, so building first turns an unfunded address into an
+      // unclassified error and leaves it at the head of the queue for the next
+      // job to fail on identically.
       const balance = await this.client.getBalance({ address: worker.address });
-      if (balance < built.gasCostWei) {
+      if (balance < bidirectional.minBalanceWei) {
         this.pool.setBalance(worker.path, balance, bidirectional.minBalanceWei);
+        this.jobs.fail(
+          job.id,
+          'preflight_underfunded',
+          new Error(
+            `${worker.address} holds ${balance} wei, below the ${bidirectional.minBalanceWei} minimum`
+          )
+        );
+        return;
+      }
+
+      let built;
+      try {
+        built = await buildTransaction({
+          client: this.client,
+          mode: job.mode,
+          from: worker.address,
+          erc20Address: bidirectional.erc20Address as Hex,
+        });
+      } catch (error) {
+        // A node refusing to estimate for lack of funds is a funding problem,
+        // not an unanticipated one, and the address must leave the rotation.
+        if (/insufficient funds/i.test(String(error))) {
+          this.pool.setBalance(worker.path, balance, balance + 1n);
+          this.jobs.fail(job.id, 'preflight_underfunded', error);
+          return;
+        }
+        throw error;
+      }
+
+      if (balance < built.gasCostWei) {
+        // Measured against the gas this transaction actually needs. The static
+        // minimum is what got us here — the address cleared it and still
+        // cannot pay — so marking it against the minimum again would leave it
+        // first in line to fail identically.
+        this.pool.setBalance(worker.path, balance, built.gasCostWei);
         this.jobs.fail(
           job.id,
           'preflight_underfunded',
@@ -315,6 +365,11 @@ export class BidirectionalService {
           serializedTransaction: signed.serialized,
         });
       } catch (error) {
+        // A throw here does not prove the transaction was refused: the node may
+        // have accepted it and lost the response. Treated like an unconfirmed
+        // broadcast, since reusing the nonce on that assumption is the one
+        // outcome that cannot be undone.
+        this.pool.quarantine(worker.path, built.nonce);
         this.jobs.fail(job.id, 'broadcast_failed', error);
         return;
       }

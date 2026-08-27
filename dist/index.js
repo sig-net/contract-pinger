@@ -368,9 +368,13 @@ if (require.main === module) {
         if (process.env.SIG_BIDIRECTIONAL_AUTO_FUND === 'true') {
             const rpcUrl = process.env.SIG_ETH_RPC_URL_SEPOLIA;
             if (rpcUrl) {
-                const service = (0, signBidirectional_1.getService)('dev', rpcUrl);
-                service.startFundingSweeps();
-                console.log('Bidirectional funding sweeps enabled');
+                // Every supported environment, not just dev. Each has its own pool of
+                // derived addresses, so sweeping one leaves the other's unfunded while
+                // the setting reads as enabled.
+                for (const env of bidirectionalEnvironments) {
+                    (0, signBidirectional_1.getService)(env, rpcUrl).startFundingSweeps();
+                }
+                console.log(`Bidirectional funding sweeps enabled for: ${bidirectionalEnvironments.join(', ')}`);
             }
             else {
                 console.warn('SIG_BIDIRECTIONAL_AUTO_FUND is set but SIG_ETH_RPC_URL_SEPOLIA is not; sweeps disabled');

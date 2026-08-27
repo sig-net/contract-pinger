@@ -123,20 +123,27 @@ describe('WorkerPool', () => {
     expect(() => pool.acquire()).toThrowError(NoWorkerAvailableError);
   });
 
-  it('returns a withheld address once the chain moves past its nonce', () => {
+  it('keeps a withheld address out while a transaction is still outstanding', () => {
     const leased = pool.acquire();
     pool.quarantine(leased.path, 7);
     pool.release(leased.path);
 
-    // Still pending: the nonce has not advanced.
-    pool.reconcile(leased.path, 7);
+    pool.reconcile(leased.path, true);
     expect(pool.all().find(w => w.path === leased.path)!.pendingNonce).toBe(7);
+  });
 
-    // Mined or dropped — either way the next nonce is knowable again.
-    pool.reconcile(leased.path, 8);
-    expect(
-      pool.all().find(w => w.path === leased.path)!.pendingNonce
-    ).toBeUndefined();
+  it('releases a withheld address whether its transaction mined or was dropped', () => {
+    // Keyed on nothing being outstanding rather than on the nonce advancing —
+    // a dropped transaction leaves `latest` where it was, so a nonce
+    // comparison would withhold that address permanently.
+    for (const path of ['load-0', 'load-1']) {
+      pool.quarantine(path, 7);
+      pool.reconcile(path, false);
+      expect(
+        pool.all().find(w => w.path === path)!.pendingNonce
+      ).toBeUndefined();
+    }
+    expect(pool.quarantined()).toHaveLength(0);
   });
 
   it('skips underfunded workers rather than handing out a job that cannot broadcast', () => {
