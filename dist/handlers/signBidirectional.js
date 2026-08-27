@@ -32,7 +32,6 @@ const toHexString = (value) => {
  */
 class BidirectionalService {
     environment;
-    rpcUrl;
     pool;
     jobs;
     limiter;
@@ -40,7 +39,6 @@ class BidirectionalService {
     addressesReady;
     constructor(environment, rpcUrl) {
         this.environment = environment;
-        this.rpcUrl = rpcUrl;
         const { bidirectional } = (0, useEnv_1.useEnv)();
         this.pool = new workerPool_1.WorkerPool((0, workerPool_1.buildPaths)(bidirectional.pathPrefix, bidirectional.paths));
         this.jobs = new store_1.JobStore(bidirectional.maxJobs, bidirectional.retainedJobs);

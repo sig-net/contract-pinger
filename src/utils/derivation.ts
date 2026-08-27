@@ -14,7 +14,7 @@ type ChainSigContract = InstanceType<
  * KDF chain id and whichever root key the contract resolved — the configured
  * override, or the one signet.js paired to the program address.
  */
-export const deriveEthAddress = async ({
+const deriveEthAddress = async ({
   chainSigContract,
   predecessor,
   path,

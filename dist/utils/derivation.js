@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.assertDerivedSender = exports.DerivationMismatchError = exports.deriveWorkerAddresses = exports.deriveEthAddress = void 0;
+exports.assertDerivedSender = exports.DerivationMismatchError = exports.deriveWorkerAddresses = void 0;
 const viem_1 = require("viem");
 const utils_1 = require("viem/utils");
 const bidirectionalTx_1 = require("./bidirectionalTx");
@@ -19,7 +19,6 @@ const deriveEthAddress = async ({ chainSigContract, predecessor, path, }) => {
     });
     return (0, utils_1.publicKeyToAddress)((publicKey.startsWith('0x') ? publicKey : `0x${publicKey}`));
 };
-exports.deriveEthAddress = deriveEthAddress;
 /**
  * Derive every worker address for a requester.
  *
@@ -38,7 +37,7 @@ const deriveWorkerAddresses = async ({ chainSigContract, requester, paths, }) =>
     for (const path of paths) {
         derived.push({
             path,
-            address: await (0, exports.deriveEthAddress)({
+            address: await deriveEthAddress({
                 chainSigContract,
                 predecessor: requester,
                 path,

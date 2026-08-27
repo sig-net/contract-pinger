@@ -90,7 +90,11 @@ const useEnv = () => {
             // Read-only here. The service reports balances and refuses to lease an
             // address below this; topping up is `scripts/fund-workers.ts`, so the
             // request path holds no spending authority.
-            minBalanceWei: wei(process.env.SIG_BIDIRECTIONAL_MIN_BALANCE_WEI, '3000000000000000', 'SIG_BIDIRECTIONAL_MIN_BALANCE_WEI'),
+            //
+            // Must not exceed the script's SIG_BIDIRECTIONAL_FUND_MIN_ETH, or an
+            // address between the two is stranded: too low for the service to lease,
+            // too high for the sweep to refill. They share a default for that reason.
+            minBalanceWei: wei(process.env.SIG_BIDIRECTIONAL_MIN_BALANCE_WEI, '2000000000000000', 'SIG_BIDIRECTIONAL_MIN_BALANCE_WEI'),
         },
     };
 };

@@ -56,7 +56,7 @@ export class BidirectionalService {
 
   constructor(
     readonly environment: SolanaEnvironment,
-    private readonly rpcUrl: string
+    rpcUrl: string
   ) {
     const { bidirectional } = useEnv();
     this.pool = new WorkerPool(

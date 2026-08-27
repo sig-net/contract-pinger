@@ -72,7 +72,7 @@ describe.skipIf(missing.length > 0)('sign_bidirectional end to end', () => {
     expect(
       funded.length,
       'No derived address holds enough gas. Fund the addresses listed above, ' +
-        'or POST /sign_bidirectional/fund.'
+        `or run: pnpm fund --env ${ENV}`
     ).toBeGreaterThan(0);
   }, 120_000);
 
