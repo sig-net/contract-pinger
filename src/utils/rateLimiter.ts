@@ -30,6 +30,11 @@ export class RateLimiter {
   /** Milliseconds until the next slot frees up, or 0 if one is free now. */
   retryAfterMs(now = Date.now()): number {
     this.prune(now);
+    // A zero limit is a supported way to freeze intake. No slot will ever
+    // free, and `hits[0]` is undefined, so the arithmetic below would hand the
+    // caller a NaN to put in a Retry-After header. A full window is the
+    // honest answer: no wait is more correct than any other.
+    if (this.limit <= 0) return this.windowMs;
     if (this.hits.length < this.limit) return 0;
     return Math.max(0, this.hits[0] + this.windowMs - now);
   }

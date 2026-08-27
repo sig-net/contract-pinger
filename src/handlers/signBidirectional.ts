@@ -52,6 +52,7 @@ export class BidirectionalService {
   private readonly client: PublicClient;
   private addressesReady?: Promise<void>;
   private sweepTimer?: NodeJS.Timeout;
+  private inFlightSweep?: Promise<SweepResult>;
 
   constructor(
     readonly environment: SolanaEnvironment,
@@ -135,13 +136,27 @@ export class BidirectionalService {
     }
   }
 
+  /**
+   * Top up whatever is short, one sweep at a time.
+   *
+   * The timer and `POST /sign_bidirectional/fund` reach this concurrently, and
+   * a sweep that outruns its interval overlaps itself. Each would read the
+   * same balance and send the same shortfall, overfunding the address and
+   * racing nonces on the shared funding key, so callers share one in-flight
+   * run rather than starting a second.
+   */
   async sweep(): Promise<SweepResult> {
-    await this.ensureAddresses();
-    return sweepFunding({
-      client: this.client,
-      pool: this.pool,
-      rpcUrl: this.rpcUrl,
+    this.inFlightSweep ??= (async () => {
+      await this.ensureAddresses();
+      return sweepFunding({
+        client: this.client,
+        pool: this.pool,
+        rpcUrl: this.rpcUrl,
+      });
+    })().finally(() => {
+      this.inFlightSweep = undefined;
     });
+    return this.inFlightSweep;
   }
 
   /** Periodic top-up so pool size stays a setting rather than a chore. */
@@ -320,12 +335,22 @@ export class BidirectionalService {
         healthCheckIntervalMs: 15_000,
         signal: watches.signal,
       });
+      // Registered now so a fast respond cannot land in a gap, but the respond
+      // leg cannot even begin until the Ethereum transaction is confirmed. Its
+      // own budget therefore starts at confirmation, below; the watcher itself
+      // is given the whole worst-case span so it can never expire first. With
+      // the defaults, leaving it at the respond budget alone meant fifteen
+      // minutes of slow signing and confirmation could eat the slack over
+      // Ethereum's finality window and fail a healthy round trip.
       const respondPromise = chainSigContract.waitForEvent({
         eventName: 'respondBidirectionalEvent',
         requestId,
         signer,
         afterSignature: solanaTx,
-        timeoutMs: bidirectional.respondTimeoutMs,
+        timeoutMs:
+          bidirectional.signatureTimeoutMs +
+          bidirectional.ethConfirmTimeoutMs +
+          bidirectional.respondTimeoutMs,
         backfillIntervalMs: 15_000,
         healthCheckIntervalMs: 15_000,
         signal: watches.signal,
@@ -413,6 +438,15 @@ export class BidirectionalService {
       // the next job while this one waits out the MPC's finality window.
       releaseLease();
 
+      // The respond budget runs from here, not from registration. Aborting is
+      // safe: the signature wait has already settled, so only the respond
+      // watcher is still listening.
+      const respondDeadline = setTimeout(
+        () => watches.abort(),
+        bidirectional.respondTimeoutMs
+      );
+      respondDeadline.unref?.();
+
       // --- Steps 9-10: respond and verify ---------------------------------
       let respond;
       try {
@@ -420,6 +454,8 @@ export class BidirectionalService {
       } catch (error) {
         this.jobs.fail(job.id, 'respond_timeout', error);
         return;
+      } finally {
+        clearTimeout(respondDeadline);
       }
 
       const serializedOutput = toHexString(respond.serializedOutput);

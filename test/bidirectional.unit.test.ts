@@ -47,6 +47,17 @@ describe('RateLimiter', () => {
     expect(limiter.tryAcquire(t0 + 60_001)).toBe(true);
   });
 
+  it('gives a usable delay when intake is frozen at zero', () => {
+    // Zero is a supported way to stop accepting work. `hits[0]` is undefined
+    // in that state, so the naive arithmetic yields NaN and the endpoint
+    // serialises Retry-After: NaN.
+    const limiter = new RateLimiter(0, 60_000);
+    expect(limiter.tryAcquire(1_000_000)).toBe(false);
+    const retry = limiter.retryAfterMs(1_000_000);
+    expect(Number.isFinite(retry)).toBe(true);
+    expect(retry).toBeGreaterThan(0);
+  });
+
   it('slides rather than resetting on a fixed boundary', () => {
     const limiter = new RateLimiter(10, 60_000);
     const t0 = 1_000_000;
