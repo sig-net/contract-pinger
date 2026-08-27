@@ -9,7 +9,6 @@ const signBidirectionalIx_1 = require("../utils/signBidirectionalIx");
 const initSolana_1 = require("../utils/initSolana");
 const useEnv_1 = require("../utils/useEnv");
 const workerPool_1 = require("../utils/workerPool");
-const funding_1 = require("../utils/funding");
 const rateLimiter_1 = require("../utils/rateLimiter");
 const store_1 = require("../jobs/store");
 const contractAddresses = {
@@ -39,8 +38,6 @@ class BidirectionalService {
     limiter;
     client;
     addressesReady;
-    sweepTimer;
-    inFlightSweep;
     constructor(environment, rpcUrl) {
         this.environment = environment;
         this.rpcUrl = rpcUrl;
@@ -67,13 +64,13 @@ class BidirectionalService {
         // before any of them finished setting the flag.
         this.addressesReady ??= (async () => {
             const { chainSigContract, keypair } = this.solana();
-            for (const worker of this.pool.all()) {
-                const address = await (0, derivation_1.deriveEthAddress)({
-                    chainSigContract,
-                    predecessor: keypair.publicKey.toString(),
-                    path: worker.path,
-                });
-                this.pool.setAddress(worker.path, address);
+            const derived = await (0, derivation_1.deriveWorkerAddresses)({
+                chainSigContract,
+                requester: keypair.publicKey.toString(),
+                paths: this.pool.all().map(w => w.path),
+            });
+            for (const { path, address } of derived) {
+                this.pool.setAddress(path, address);
             }
         })().catch(error => {
             // Not cached on failure, so a transient RPC error does not permanently
@@ -115,43 +112,6 @@ class BidirectionalService {
             ]);
             this.pool.reconcile(worker.path, pending > latest);
         }
-    }
-    /**
-     * Top up whatever is short, one sweep at a time.
-     *
-     * The timer and `POST /sign_bidirectional/fund` reach this concurrently, and
-     * a sweep that outruns its interval overlaps itself. Each would read the
-     * same balance and send the same shortfall, overfunding the address and
-     * racing nonces on the shared funding key, so callers share one in-flight
-     * run rather than starting a second.
-     */
-    async sweep() {
-        this.inFlightSweep ??= (async () => {
-            await this.ensureAddresses();
-            return (0, funding_1.sweepFunding)({
-                client: this.client,
-                pool: this.pool,
-                rpcUrl: this.rpcUrl,
-            });
-        })().finally(() => {
-            this.inFlightSweep = undefined;
-        });
-        return this.inFlightSweep;
-    }
-    stopFundingSweeps() {
-        if (this.sweepTimer)
-            clearInterval(this.sweepTimer);
-        this.sweepTimer = undefined;
-    }
-    /** Periodic top-up so pool size stays a setting rather than a chore. */
-    startFundingSweeps() {
-        const { fundingSweepIntervalMs } = (0, useEnv_1.useEnv)().bidirectional;
-        if (this.sweepTimer)
-            return;
-        this.sweepTimer = setInterval(() => {
-            this.sweep().catch(error => console.error('bidirectional funding sweep failed:', error));
-        }, fundingSweepIntervalMs);
-        this.sweepTimer.unref?.();
     }
     /** Accepts a job and runs it in the background. */
     start(mode) {
@@ -449,8 +409,6 @@ const abortActiveJobs = () => {
     for (const controller of activeJobs)
         controller.abort();
     activeJobs.clear();
-    for (const service of services.values())
-        service.stopFundingSweeps();
     return count;
 };
 exports.abortActiveJobs = abortActiveJobs;

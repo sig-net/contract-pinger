@@ -33,6 +33,47 @@ export const deriveEthAddress = async ({
   );
 };
 
+export interface DerivedWorker {
+  path: string;
+  address: Hex;
+}
+
+/**
+ * Derive every worker address for a requester.
+ *
+ * Shared with `scripts/fund-workers.ts`, which sends ETH to these addresses
+ * without asking the service where to send it. Two implementations of this
+ * would be two chances to disagree, and disagreeing means funding addresses
+ * nothing will ever spend from.
+ *
+ * Note what fixes the result: the requester is the public key of the same
+ * `SIG_SOL_SK` that pays Solana fees, so rotating that key moves every address
+ * here. So does pointing at a different environment, whose program address
+ * pairs to a different root key.
+ */
+export const deriveWorkerAddresses = async ({
+  chainSigContract,
+  requester,
+  paths,
+}: {
+  chainSigContract: ChainSigContract;
+  requester: string;
+  paths: readonly string[];
+}): Promise<DerivedWorker[]> => {
+  const derived: DerivedWorker[] = [];
+  for (const path of paths) {
+    derived.push({
+      path,
+      address: await deriveEthAddress({
+        chainSigContract,
+        predecessor: requester,
+        path,
+      }),
+    });
+  }
+  return derived;
+};
+
 export class DerivationMismatchError extends Error {
   constructor(
     readonly expected: Hex,

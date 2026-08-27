@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.assertDerivedSender = exports.DerivationMismatchError = exports.deriveEthAddress = void 0;
+exports.assertDerivedSender = exports.DerivationMismatchError = exports.deriveWorkerAddresses = exports.deriveEthAddress = void 0;
 const viem_1 = require("viem");
 const utils_1 = require("viem/utils");
 const bidirectionalTx_1 = require("./bidirectionalTx");
@@ -20,6 +20,34 @@ const deriveEthAddress = async ({ chainSigContract, predecessor, path, }) => {
     return (0, utils_1.publicKeyToAddress)((publicKey.startsWith('0x') ? publicKey : `0x${publicKey}`));
 };
 exports.deriveEthAddress = deriveEthAddress;
+/**
+ * Derive every worker address for a requester.
+ *
+ * Shared with `scripts/fund-workers.ts`, which sends ETH to these addresses
+ * without asking the service where to send it. Two implementations of this
+ * would be two chances to disagree, and disagreeing means funding addresses
+ * nothing will ever spend from.
+ *
+ * Note what fixes the result: the requester is the public key of the same
+ * `SIG_SOL_SK` that pays Solana fees, so rotating that key moves every address
+ * here. So does pointing at a different environment, whose program address
+ * pairs to a different root key.
+ */
+const deriveWorkerAddresses = async ({ chainSigContract, requester, paths, }) => {
+    const derived = [];
+    for (const path of paths) {
+        derived.push({
+            path,
+            address: await (0, exports.deriveEthAddress)({
+                chainSigContract,
+                predecessor: requester,
+                path,
+            }),
+        });
+    }
+    return derived;
+};
+exports.deriveWorkerAddresses = deriveWorkerAddresses;
 class DerivationMismatchError extends Error {
     expected;
     recovered;

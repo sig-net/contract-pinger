@@ -1,0 +1,265 @@
+/**
+ * Top up the derived worker addresses for a bidirectional environment.
+ *
+ * Deliberately independent of the pinger. The addresses are derived here from
+ * public inputs and balances are read straight from the Ethereum RPC, so this
+ * neither trusts the service to name its own payees nor needs it to be
+ * running — which is plausibly when funding most needs to already be correct.
+ *
+ *   pnpm fund --env testnet
+ *   pnpm fund --env testnet --dry-run
+ *
+ * Requires SIG_BIDIRECTIONAL_FUNDING_SK in the environment. Never pass a key
+ * as an argument: argv is visible in `ps` and shell history.
+ */
+import 'dotenv/config';
+import { Connection, Keypair, PublicKey } from '@solana/web3.js';
+import * as anchor from '@coral-xyz/anchor';
+import { constants, contracts } from 'signet.js';
+import {
+  createWalletClient,
+  formatEther,
+  http,
+  parseEther,
+  type Hex,
+} from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+import { sepolia } from 'viem/chains';
+
+import { deriveWorkerAddresses } from '../src/utils/derivation';
+import {
+  createSepoliaClient,
+  SEPOLIA_CHAIN_ID,
+} from '../src/utils/bidirectionalTx';
+import { buildPaths } from '../src/utils/workerPool';
+
+const ENVIRONMENTS = { dev: 'TESTNET_DEV', testnet: 'TESTNET' } as const;
+type Env = keyof typeof ENVIRONMENTS;
+
+const arg = (name: string, fallback?: string) => {
+  const i = process.argv.indexOf(`--${name}`);
+  return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : fallback;
+};
+const flag = (name: string) => process.argv.includes(`--${name}`);
+
+const fail = (message: string): never => {
+  console.error(`\n✗ ${message}`);
+  process.exit(1);
+};
+
+const main = async () => {
+  const env = (arg('env', 'testnet') as Env) ?? 'testnet';
+  if (!(env in ENVIRONMENTS))
+    fail(`--env must be one of: ${Object.keys(ENVIRONMENTS).join(', ')}`);
+
+  const fundingKey = process.env.SIG_BIDIRECTIONAL_FUNDING_SK;
+  if (!fundingKey) fail('SIG_BIDIRECTIONAL_FUNDING_SK is not set');
+
+  const rpcUrl = process.env.SIG_ETH_RPC_URL_SEPOLIA;
+  if (!rpcUrl) fail('SIG_ETH_RPC_URL_SEPOLIA is not set');
+
+  // Public by construction — the requester is SIG_SOL_SK's *public* key. It
+  // must match the deployed service exactly: rotating that keypair moves every
+  // address below, and this script would then fund addresses nothing spends
+  // from while the real ones run dry.
+  const requester =
+    process.env.SIG_BIDIRECTIONAL_REQUESTER_PUBKEY ??
+    (process.env.SIG_SOL_SK
+      ? Keypair.fromSecretKey(
+          new Uint8Array(JSON.parse(process.env.SIG_SOL_SK))
+        ).publicKey.toBase58()
+      : undefined);
+  if (!requester) {
+    fail(
+      "Set SIG_BIDIRECTIONAL_REQUESTER_PUBKEY to the deployed service's Solana public key " +
+        '(or SIG_SOL_SK locally, from which it is derived)'
+    );
+  }
+  new PublicKey(requester); // rejects a malformed value before anything is sent
+
+  // --- safety limits ------------------------------------------------------
+  //
+  // The band between min and top-up is the headroom an address has before it
+  // needs the next sweep, so it has to absorb the scheduler running late.
+  //
+  //   runs of headroom = (topup - min) / gas per run
+  //
+  // At the measured 0.0000234 ETH for eth_self_transfer and 10 jobs/min spread
+  // over 10 addresses — one run per address per minute — the 0.002/0.0035
+  // default gives ~64 minutes, or four missed fifteen-minute sweeps. Re-measure
+  // when the transaction mode or Sepolia gas moves; these are variables, not
+  // constants, precisely because that number is not fixed.
+  const expectedWorkers = Number(
+    arg('paths', process.env.SIG_BIDIRECTIONAL_PATHS ?? '10')
+  );
+  const pathPrefix = process.env.SIG_BIDIRECTIONAL_PATH_PREFIX ?? 'load';
+  const minBalance = parseEther(
+    arg('min', process.env.SIG_BIDIRECTIONAL_FUND_MIN_ETH ?? '0.002')!
+  );
+  const topUpTo = parseEther(
+    arg('topup', process.env.SIG_BIDIRECTIONAL_FUND_TOPUP_ETH ?? '0.0035')!
+  );
+  const maxPerAddress = parseEther(
+    process.env.SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH ?? '0.02'
+  );
+  const maxPerRun = parseEther(
+    process.env.SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH ?? '0.1'
+  );
+  const reserve = parseEther(
+    process.env.SIG_BIDIRECTIONAL_FUND_RESERVE_ETH ?? '0.02'
+  );
+  const dryRun = flag('dry-run');
+
+  if (topUpTo <= minBalance) {
+    fail(
+      `top-up target (${formatEther(topUpTo)}) must exceed the minimum (${formatEther(minBalance)})`
+    );
+  }
+  if (topUpTo > maxPerAddress) {
+    fail(
+      `top-up target (${formatEther(topUpTo)}) exceeds the per-address cap (${formatEther(maxPerAddress)})`
+    );
+  }
+
+  // --- derive, locally ----------------------------------------------------
+  const solanaRpc = process.env.SIG_SOL_RPC_URL_DEV;
+  if (!solanaRpc) fail('SIG_SOL_RPC_URL_DEV is not set');
+
+  const programId = constants.CONTRACT_ADDRESSES.SOLANA[ENVIRONMENTS[env]];
+  // The provider is never used for derivation — `getDerivedPublicKey` is pure
+  // crypto — but constructing the contract is what pairs the root key to the
+  // program address, which is the step that must not be reimplemented here.
+  const chainSigContract = new contracts.solana.ChainSignatureContract({
+    provider: new anchor.AnchorProvider(
+      new Connection(solanaRpc!, 'confirmed'),
+      new anchor.Wallet(Keypair.generate()),
+      {}
+    ),
+    programId,
+  });
+
+  const paths = buildPaths(pathPrefix, expectedWorkers);
+  const workers = await deriveWorkerAddresses({
+    chainSigContract,
+    requester: requester!,
+    paths,
+  });
+
+  if (workers.length !== expectedWorkers) {
+    fail(`derived ${workers.length} addresses, expected ${expectedWorkers}`);
+  }
+
+  const client = createSepoliaClient(rpcUrl!);
+  const chainId = await client.getChainId();
+  if (chainId !== SEPOLIA_CHAIN_ID) {
+    fail(
+      `RPC reports chain ${chainId}, expected Sepolia (${SEPOLIA_CHAIN_ID})`
+    );
+  }
+
+  const account = privateKeyToAccount(
+    (fundingKey!.startsWith('0x') ? fundingKey! : `0x${fundingKey}`) as Hex
+  );
+
+  console.log(`environment : ${env}`);
+  console.log(`program     : ${programId}`);
+  console.log(`requester   : ${requester}`);
+  console.log(`funding from: ${account.address}`);
+  console.log(
+    `band        : ${formatEther(minBalance)} → ${formatEther(topUpTo)} ETH\n`
+  );
+
+  // --- decide -------------------------------------------------------------
+  const balances = await Promise.all(
+    workers.map(w => client.getBalance({ address: w.address }))
+  );
+  const plan = workers
+    .map((w, i) => ({ ...w, balance: balances[i], top: topUpTo - balances[i] }))
+    .filter(w => w.balance < minBalance);
+
+  workers.forEach((w, i) => {
+    const short = balances[i] < minBalance ? '  ← short' : '';
+    console.log(
+      `  ${w.path.padEnd(8)} ${w.address}  ${formatEther(balances[i])} ETH${short}`
+    );
+  });
+
+  if (plan.length === 0) {
+    console.log('\n✓ every address is above the minimum');
+    return;
+  }
+
+  const total = plan.reduce((sum, w) => sum + w.top, 0n);
+  console.log(
+    `\n${plan.length} address(es) short, ${formatEther(total)} ETH to send`
+  );
+
+  if (total > maxPerRun) {
+    fail(
+      `that exceeds the per-run cap of ${formatEther(maxPerRun)} ETH. ` +
+        'Raise SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH deliberately, or fund fewer addresses.'
+    );
+  }
+
+  const sourceBalance = await client.getBalance({ address: account.address });
+  if (sourceBalance < total + reserve) {
+    fail(
+      `funding wallet holds ${formatEther(sourceBalance)} ETH; needs ${formatEther(total)} ` +
+        `plus a ${formatEther(reserve)} reserve for gas. Top up ${account.address}.`
+    );
+  }
+
+  if (dryRun) {
+    console.log('\n(dry run — nothing sent)');
+    return;
+  }
+
+  // --- send, and confirm ---------------------------------------------------
+  const wallet = createWalletClient({
+    account,
+    chain: sepolia,
+    transport: http(rpcUrl!),
+  });
+
+  for (const w of plan) {
+    const hash = await wallet.sendTransaction({ to: w.address, value: w.top });
+    // Waited on rather than assumed: a submitted transaction is not a funded
+    // address, and reporting one as the other is how a run starts against a
+    // pool that is still dry.
+    const receipt = await client.waitForTransactionReceipt({
+      hash,
+      timeout: 180_000,
+    });
+    const status = receipt.status === 'success' ? '✓' : '✗';
+    console.log(`  ${status} ${w.path}  +${formatEther(w.top)} ETH  ${hash}`);
+  }
+
+  // --- verify --------------------------------------------------------------
+  const after = await Promise.all(
+    workers.map(w => client.getBalance({ address: w.address }))
+  );
+  const stillShort = workers.filter((_, i) => after[i] < minBalance);
+
+  const remaining = await client.getBalance({ address: account.address });
+  const perRunBurn = topUpTo - minBalance;
+  const runway = perRunBurn > 0n ? remaining / perRunBurn : 0n;
+  console.log(
+    `\nfunding wallet: ${formatEther(remaining)} ETH ` +
+      `(~${runway} more top-ups at this band)`
+  );
+
+  if (remaining < reserve) {
+    fail(`funding wallet is below its ${formatEther(reserve)} ETH reserve`);
+  }
+  if (stillShort.length > 0) {
+    fail(
+      `still short after funding: ${stillShort.map(w => w.path).join(', ')}`
+    );
+  }
+  console.log('✓ all addresses funded');
+};
+
+main().catch(error => {
+  console.error(error);
+  process.exit(1);
+});

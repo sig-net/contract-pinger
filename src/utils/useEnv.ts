@@ -111,19 +111,13 @@ export const useEnv = () => {
       // to consume the nonce; a second guards against a shallow reorg
       // stranding the next transaction behind a nonce gap.
       confirmations: num(process.env.SIG_BIDIRECTIONAL_CONFIRMATIONS, 2),
+      // Read-only here. The service reports balances and refuses to lease an
+      // address below this; topping up is `scripts/fund-workers.ts`, so the
+      // request path holds no spending authority.
       minBalanceWei: wei(
         process.env.SIG_BIDIRECTIONAL_MIN_BALANCE_WEI,
-        '2000000000000000',
+        '3000000000000000',
         'SIG_BIDIRECTIONAL_MIN_BALANCE_WEI'
-      ),
-      topupWei: wei(
-        process.env.SIG_BIDIRECTIONAL_TOPUP_WEI,
-        '10000000000000000',
-        'SIG_BIDIRECTIONAL_TOPUP_WEI'
-      ),
-      fundingSweepIntervalMs: num(
-        process.env.SIG_BIDIRECTIONAL_FUNDING_SWEEP_MS,
-        300_000
       ),
     },
   };

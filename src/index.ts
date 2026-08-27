@@ -293,34 +293,6 @@ app.get(
   }
 );
 
-app.post(
-  '/sign_bidirectional/fund',
-  async (req: express.Request, res: express.Response): Promise<void> => {
-    try {
-      const resolved = resolveBidirectionalService(req.body?.env ?? 'dev');
-      if ('error' in resolved) {
-        res.status(400).json({ error: resolved.error });
-        return;
-      }
-      const result = await resolved.service.sweep();
-      res.json({
-        checked: result.checked,
-        toppedUp: result.toppedUp.map(t => ({
-          path: t.path,
-          address: t.address,
-          amountWei: t.amountWei.toString(),
-          txHash: t.txHash,
-        })),
-        stillUnderfunded: result.stillUnderfunded,
-        errors: result.errors,
-      });
-    } catch (error: any) {
-      console.error('sign_bidirectional/fund error:', error);
-      res.status(500).json({ error: error.message || String(error) });
-    }
-  }
-);
-
 app.get(
   '/sign_bidirectional/:jobId',
   (req: express.Request, res: express.Response): void => {
@@ -420,28 +392,6 @@ if (require.main === module) {
     console.log(
       `Supported blockchains: ${blockchainHandlers.getSupportedChains().join(', ')}`
     );
-
-    // Opt-in, because a sweep spends real ETH. Without it the derived
-    // addresses are funded by hand or by POST /sign_bidirectional/fund;
-    // GET /sign_bidirectional/workers lists what needs topping up.
-    if (process.env.SIG_BIDIRECTIONAL_AUTO_FUND === 'true') {
-      const rpcUrl = process.env.SIG_ETH_RPC_URL_SEPOLIA;
-      if (rpcUrl) {
-        // Every supported environment, not just dev. Each has its own pool of
-        // derived addresses, so sweeping one leaves the other's unfunded while
-        // the setting reads as enabled.
-        for (const env of bidirectionalEnvironments) {
-          getBidirectionalService(env, rpcUrl).startFundingSweeps();
-        }
-        console.log(
-          `Bidirectional funding sweeps enabled for: ${bidirectionalEnvironments.join(', ')}`
-        );
-      } else {
-        console.warn(
-          'SIG_BIDIRECTIONAL_AUTO_FUND is set but SIG_ETH_RPC_URL_SEPOLIA is not; sweeps disabled'
-        );
-      }
-    }
   });
 
   process.on('SIGTERM', () => {

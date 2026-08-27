@@ -1,0 +1,97 @@
+name: Fund Bidirectional Workers
+
+# Funding is treasury automation, not request handling, so it lives here rather
+# than inside the service. The pinger reports balances and refuses to lease an
+# address that is short; nothing in the request path holds spending authority.
+#
+# Every fifteen minutes rather than hourly: at 10 jobs/min each address burns
+# roughly 0.0014 ETH/hour, and GitHub's scheduler runs late often enough that
+# the balance band has to absorb several missed runs on its own. See the runway
+# figure the script prints at the end of each run.
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+    inputs:
+      env:
+        description: MPC network
+        required: false
+        default: testnet
+        type: choice
+        options:
+          - dev
+          - testnet
+      dry_run:
+        description: Report what would be sent, send nothing
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+# Never overlapping: two runs would read the same balances and each send a full
+# top-up from the same wallet, racing nonces and overfunding. Queued rather than
+# cancelled, so a manual run cannot silently drop a scheduled one mid-transfer.
+concurrency:
+  group: fund-bidirectional-workers
+  cancel-in-progress: false
+
+jobs:
+  fund:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: Pinger Test ENV
+    strategy:
+      # Separate derivation sets: each environment's program address pairs to a
+      # different root key, so the addresses do not overlap.
+      matrix:
+        env: ${{ inputs.env && fromJSON(format('["{0}"]', inputs.env)) || fromJSON('["dev","testnet"]') }}
+      fail-fast: false
+    env:
+      SIG_ETH_RPC_URL_SEPOLIA: ${{ secrets.SIG_ETH_RPC_URL_SEPOLIA }}
+      SIG_SOL_RPC_URL_DEV: ${{ secrets.SIG_SOL_RPC_URL_DEV }}
+      SIG_BIDIRECTIONAL_FUNDING_SK: ${{ secrets.SIG_BIDIRECTIONAL_FUNDING_SK }}
+      # Public by construction — the requester is a public key. It must match
+      # the deployed service's SIG_SOL_SK, since rotating that keypair moves
+      # every derived address.
+      SIG_BIDIRECTIONAL_REQUESTER_PUBKEY: ${{ vars.SIG_BIDIRECTIONAL_REQUESTER_PUBKEY }}
+      SIG_BIDIRECTIONAL_PATHS: ${{ vars.SIG_BIDIRECTIONAL_PATHS || '10' }}
+      SIG_BIDIRECTIONAL_PATH_PREFIX: ${{ vars.SIG_BIDIRECTIONAL_PATH_PREFIX || 'load' }}
+      # Thresholds are variables, not constants: the right band depends on the
+      # measured gas of the enabled transaction mode and on how long a pool must
+      # survive without a sweep.
+      #
+      #   runs of headroom = (topup - min) / gas per run
+      #
+      # The defaults give ~64 minutes at 10 jobs/min, or four missed sweeps,
+      # against a measured 0.0000234 ETH per eth_self_transfer round trip.
+      SIG_BIDIRECTIONAL_FUND_MIN_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_MIN_ETH || '0.002' }}
+      SIG_BIDIRECTIONAL_FUND_TOPUP_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_TOPUP_ETH || '0.0035' }}
+      SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH || '0.02' }}
+      SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH || '0.1' }}
+      SIG_BIDIRECTIONAL_FUND_RESERVE_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_RESERVE_ETH || '0.02' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.14.0'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Validate configuration
+        run: |
+          set -euo pipefail
+          for name in SIG_ETH_RPC_URL_SEPOLIA SIG_SOL_RPC_URL_DEV \
+                      SIG_BIDIRECTIONAL_FUNDING_SK SIG_BIDIRECTIONAL_REQUESTER_PUBKEY; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Missing required configuration: ${name}"
+              exit 1
+            fi
+          done
+
+      - name: Fund ${{ matrix.env }} workers
+        run: pnpm fund --env ${{ matrix.env }} ${{ inputs.dry_run && '--dry-run' || '' }}

@@ -84,7 +84,6 @@ This will automatically format your codebase according to the project's style ru
 | `GET /sign_bidirectional/:jobId`       | Job state, timings and transaction hashes                            |
 | `GET /sign_bidirectional/workers?env=` | Derived addresses, gas balances, busy/idle                           |
 | `GET /sign_bidirectional/stats?env=`   | Latency and failure aggregates, by mode                              |
-| `POST /sign_bidirectional/fund`        | Run a gas top-up sweep now                                           |
 
 ## Bidirectional sign/respond
 
@@ -144,10 +143,41 @@ are rejected with `429` and a `Retry-After` rather than accepted and starved.
 
 Each derivation path owns one Ethereum address with its own nonce space, which
 is what lets jobs run concurrently. Every one of those addresses needs gas.
-`GET /sign_bidirectional/workers` lists them with balances;
-`POST /sign_bidirectional/fund` tops up the short ones from `SIG_EVM_SK_1..5`.
-Set `SIG_BIDIRECTIONAL_AUTO_FUND=true` to sweep periodically — off by default,
-since a sweep spends real ETH.
+
+The service never spends. `GET /sign_bidirectional/workers` reports each
+address and its balance, and a job is refused rather than started when its
+address is short — but topping up lives outside the request path:
+
+```sh
+pnpm fund --env testnet --dry-run   # show what would be sent
+pnpm fund --env testnet
+```
+
+The same script runs on a schedule as the `Fund Bidirectional Workers`
+workflow. It derives the addresses itself from public inputs rather than asking
+the service for them, so it neither trusts the service to name its own payees
+nor needs it to be running. It reads `SIG_BIDIRECTIONAL_FUNDING_SK` from the
+environment — never an argument, which would put a key in `ps` output — waits
+for each top-up receipt before reporting success, and refuses to send beyond
+its per-address and per-run caps or below the funding wallet's reserve.
+
+The addresses follow from `(requester, path)`, where the requester is the
+**public** key of `SIG_SOL_SK`. Rotating that keypair moves every address, so
+the workflow's `SIG_BIDIRECTIONAL_REQUESTER_PUBKEY` must match the deployed
+service. Each environment derives a different set, since its program address
+pairs to a different root key.
+
+Sizing the band: an address needs enough headroom to survive until the next
+sweep, including a late one.
+
+```
+runs of headroom = (topup - min) / gas per run
+```
+
+At a measured 0.0000234 ETH per `eth_self_transfer` round trip and 10 jobs/min
+spread over 10 addresses, the 0.002 → 0.0035 default gives about 64 minutes —
+four missed fifteen-minute sweeps. Re-measure when the mode or Sepolia gas
+moves.
 
 An address is released back to the pool once its transaction confirms, not when
 the job finishes: the nonce is spent at mining time, long before the MPC
@@ -158,11 +188,6 @@ instead — `latest` still reports the old nonce while a transaction is pending,
 so reusing it would sign that nonce twice. `GET /sign_bidirectional/workers`
 shows it as `pendingNonce`, and the address returns to service automatically
 once the chain moves past that nonce.
-
-The `Bidirectional Round Trip (manual)` workflow runs one round trip from CI on
-demand, which is a way to exercise a branch without local setup. It needs a
-funded derived address for the CI environment's own `SIG_SOL_SK`, since the
-addresses follow from whichever key signs.
 
 ### Running a single instance
 

@@ -7,6 +7,8 @@
  *   pnpm loadtest --jobs 50
  *   pnpm loadtest --jobs 20 --mode erc20_zero_transfer --env testnet
  *
+ * Reads API_SECRET from the environment; it is never taken as an argument.
+ *
  * Submission and completion are deliberately separate phases in the output:
  * jobs are accepted in seconds but settle over tens of minutes, so a summary
  * that only appeared at the end would look like a hang.
@@ -35,7 +37,9 @@ const parseArgs = (argv: string[]): Options => {
       process.env.SIG_BIDIRECTIONAL_TX_MODE || 'eth_self_transfer'
     ),
     url: get('url', `http://localhost:${process.env.PORT || '3001'}`),
-    secret: get('secret', process.env.API_SECRET || ''),
+    // Environment only. A secret passed as an argument is visible in `ps`
+    // output and lands in shell history.
+    secret: process.env.API_SECRET || '',
     pollMs: Number(get('poll', '15000')),
   };
 };
@@ -63,7 +67,7 @@ const fmt = (ms: number | null) =>
 const main = async () => {
   const opts = parseArgs(process.argv.slice(2));
   if (!opts.secret) {
-    console.error('Set API_SECRET in .env or pass --secret');
+    console.error('Set API_SECRET in the environment');
     process.exit(1);
   }
 
