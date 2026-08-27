@@ -149,9 +149,13 @@ address and its balance, and a job is refused rather than started when its
 address is short — but topping up lives outside the request path:
 
 ```sh
-pnpm fund --env testnet --dry-run   # show what would be sent
-pnpm fund --env testnet
+pnpm fund --env dev,testnet --dry-run   # show what would be sent
+pnpm fund --env dev,testnet
 ```
+
+Every network is funded by one invocation rather than one per network: the
+spend caps govern a run, so a separate process per network would enforce each
+cap against its own total.
 
 The same script runs on a schedule as the `Fund Bidirectional Workers`
 workflow. It derives the addresses itself from public inputs rather than asking

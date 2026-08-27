@@ -33,6 +33,8 @@ export type FailureReason =
   | 'transaction_reverted'
   | 'respond_timeout'
   | 'respond_mismatch'
+  // Abandoned at a phase boundary because the process was shutting down.
+  | 'shutdown'
   | 'internal_error';
 
 export interface JobTimings {

@@ -14,13 +14,10 @@ on:
   workflow_dispatch:
     inputs:
       env:
-        description: MPC network
+        description: Networks to fund (comma-separated)
         required: false
-        default: testnet
-        type: choice
-        options:
-          - dev
-          - testnet
+        default: dev,testnet
+        type: string
       dry_run:
         description: Report what would be sent, send nothing
         required: false
@@ -33,6 +30,11 @@ permissions:
 # Never overlapping: two runs would read the same balances and each send a full
 # top-up from the same wallet, racing nonces and overfunding. Queued rather than
 # cancelled, so a manual run cannot silently drop a scheduled one mid-transfer.
+#
+# Every network is funded by a single invocation rather than a job per network.
+# The spend caps govern a run, and a process per network would enforce each cap
+# against its own total — letting combined spend reach a multiple of the figure
+# that was set.
 concurrency:
   group: fund-bidirectional-workers
   cancel-in-progress: false
@@ -42,18 +44,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: Pinger Test ENV
-    strategy:
-      # One at a time. Workflow concurrency keeps separate runs apart but does
-      # not serialize matrix children, so parallel jobs would read the same
-      # nonce on the shared funding wallet and submit colliding transactions —
-      # and each would enforce the per-run cap against its own total, letting
-      # combined spend reach twice the intended limit.
-      max-parallel: 1
-      # Separate derivation sets: each environment's program address pairs to a
-      # different root key, so the addresses do not overlap.
-      matrix:
-        env: ${{ inputs.env && fromJSON(format('["{0}"]', inputs.env)) || fromJSON('["dev","testnet"]') }}
-      fail-fast: false
     env:
       SIG_ETH_RPC_URL_SEPOLIA: ${{ secrets.SIG_ETH_RPC_URL_SEPOLIA }}
       SIG_SOL_RPC_URL_DEV: ${{ secrets.SIG_SOL_RPC_URL_DEV }}
@@ -103,5 +93,5 @@ jobs:
             fi
           done
 
-      - name: Fund ${{ matrix.env }} workers
-        run: pnpm fund --env ${{ matrix.env }} ${{ inputs.dry_run && '--dry-run' || '' }}
+      - name: Fund workers
+        run: pnpm fund --env '${{ inputs.env || 'dev,testnet' }}' ${{ inputs.dry_run && '--dry-run' || '' }}

@@ -7,6 +7,7 @@
  * running — which is plausibly when funding most needs to already be correct.
  *
  *   pnpm fund --env testnet
+ *   pnpm fund --env dev,testnet          # one run, one spend cap
  *   pnpm fund --env testnet --dry-run
  *
  * Requires SIG_BIDIRECTIONAL_FUNDING_SK in the environment. Never pass a key
@@ -26,7 +27,10 @@ import {
 import { privateKeyToAccount } from 'viem/accounts';
 import { sepolia } from 'viem/chains';
 
-import { deriveWorkerAddresses } from '../src/utils/derivation';
+import {
+  deriveWorkerAddresses,
+  type DerivedWorker,
+} from '../src/utils/derivation';
 import { buildChainSignatureContract } from '../src/utils/initSolana';
 import {
   createSepoliaClient,
@@ -35,6 +39,8 @@ import {
 import { buildPaths } from '../src/utils/workerPool';
 
 const ENVIRONMENTS = { dev: 'TESTNET_DEV', testnet: 'TESTNET' } as const;
+/** Intrinsic cost of a value transfer to an account with no code. */
+const PLAIN_TRANSFER_GAS = 21_000n;
 type Env = keyof typeof ENVIRONMENTS;
 
 const arg = (name: string, fallback?: string) => {
@@ -49,9 +55,21 @@ const fail = (message: string): never => {
 };
 
 const main = async () => {
-  const env = (arg('env', 'testnet') as Env) ?? 'testnet';
-  if (!(env in ENVIRONMENTS))
-    fail(`--env must be one of: ${Object.keys(ENVIRONMENTS).join(', ')}`);
+  // Comma-separated, and swept in one process on purpose: the spend caps below
+  // govern a run, and a separate process per environment would enforce each cap
+  // against its own total — letting the combined spend reach a multiple of the
+  // figure that was set.
+  const envs = (arg('env', 'testnet') ?? 'testnet')
+    .split(',')
+    .map(e => e.trim())
+    .filter(Boolean) as Env[];
+  for (const env of envs) {
+    if (!(env in ENVIRONMENTS)) {
+      fail(
+        `--env values must be among: ${Object.keys(ENVIRONMENTS).join(', ')}`
+      );
+    }
+  }
 
   const fundingKey = process.env.SIG_BIDIRECTIONAL_FUNDING_SK;
   if (!fundingKey) fail('SIG_BIDIRECTIONAL_FUNDING_SK is not set');
@@ -140,30 +158,37 @@ const main = async () => {
   const solanaRpc = process.env.SIG_SOL_RPC_URL_DEV;
   if (!solanaRpc) fail('SIG_SOL_RPC_URL_DEV is not set');
 
-  const programId = constants.CONTRACT_ADDRESSES.SOLANA[ENVIRONMENTS[env]];
-  // Built through the service's own constructor, not a local equivalent. That
-  // is where SIG_SOL_ROOT_PUBLIC_KEY is applied: a contract assembled here
-  // would fall back to the key paired with the program address and derive an
-  // entirely different address set, funding addresses no worker uses while the
-  // real ones ran dry. The provider is never used — derivation is pure crypto.
-  const chainSigContract = buildChainSignatureContract({
-    contractAddress: programId,
-    provider: new anchor.AnchorProvider(
-      new Connection(solanaRpc!, 'confirmed'),
-      new anchor.Wallet(Keypair.generate()),
-      {}
-    ),
-  });
+  const provider = new anchor.AnchorProvider(
+    new Connection(solanaRpc!, 'confirmed'),
+    new anchor.Wallet(Keypair.generate()),
+    {}
+  );
 
-  const paths = buildPaths(pathPrefix, expectedWorkers);
-  const workers = await deriveWorkerAddresses({
-    chainSigContract,
-    requester: requester!,
-    paths,
-  });
-
-  if (workers.length !== expectedWorkers) {
-    fail(`derived ${workers.length} addresses, expected ${expectedWorkers}`);
+  const workers: (DerivedWorker & { env: Env })[] = [];
+  for (const env of envs) {
+    const programId = constants.CONTRACT_ADDRESSES.SOLANA[ENVIRONMENTS[env]];
+    // Built through the service's own constructor, not a local equivalent.
+    // That is where SIG_SOL_ROOT_PUBLIC_KEY is applied: a contract assembled
+    // here would fall back to the key paired with the program address and
+    // derive an entirely different address set, funding addresses no worker
+    // uses while the real ones ran dry. The provider is never used for
+    // derivation — it is pure crypto.
+    const chainSigContract = buildChainSignatureContract({
+      contractAddress: programId,
+      provider,
+    });
+    const derived = await deriveWorkerAddresses({
+      chainSigContract,
+      requester: requester!,
+      paths: buildPaths(pathPrefix, expectedWorkers),
+    });
+    if (derived.length !== expectedWorkers) {
+      fail(
+        `derived ${derived.length} addresses for ${env}, expected ${expectedWorkers}`
+      );
+    }
+    console.log(`${env.padEnd(8)} program ${programId}`);
+    workers.push(...derived.map(d => ({ ...d, env })));
   }
 
   const client = createSepoliaClient(rpcUrl!);
@@ -178,8 +203,6 @@ const main = async () => {
     (fundingKey!.startsWith('0x') ? fundingKey! : `0x${fundingKey}`) as Hex
   );
 
-  console.log(`environment : ${env}`);
-  console.log(`program     : ${programId}`);
   console.log(`requester   : ${requester}`);
   console.log(
     `root key    : ${process.env.SIG_SOL_ROOT_PUBLIC_KEY ? 'SIG_SOL_ROOT_PUBLIC_KEY override' : 'paired to the program address'}`
@@ -200,7 +223,7 @@ const main = async () => {
   workers.forEach((w, i) => {
     const short = balances[i] < minBalance ? '  ← short' : '';
     console.log(
-      `  ${w.path.padEnd(8)} ${w.address}  ${formatEther(balances[i])} ETH${short}`
+      `  ${w.env.padEnd(8)} ${w.path.padEnd(8)} ${w.address}  ${formatEther(balances[i])} ETH${short}`
     );
   });
 
@@ -221,11 +244,22 @@ const main = async () => {
     );
   }
 
+  // Every transfer costs gas on top of its value. Checking only `total` lets a
+  // wallet holding exactly total + reserve pass, then finish below the reserve
+  // it was supposed to keep — and the balance check at the end can only report
+  // that after the money is gone.
+  const fees = await client.estimateFeesPerGas();
+  const gasBudget =
+    BigInt(plan.length) * PLAIN_TRANSFER_GAS * fees.maxFeePerGas;
+  const required = total + gasBudget + reserve;
+
   const sourceBalance = await client.getBalance({ address: account.address });
-  if (sourceBalance < total + reserve) {
+  if (sourceBalance < required) {
     fail(
-      `funding wallet holds ${formatEther(sourceBalance)} ETH; needs ${formatEther(total)} ` +
-        `plus a ${formatEther(reserve)} reserve for gas. Top up ${account.address}.`
+      `funding wallet holds ${formatEther(sourceBalance)} ETH; needs ` +
+        `${formatEther(total)} to send, ~${formatEther(gasBudget)} for gas across ` +
+        `${plan.length} transfer(s), and a ${formatEther(reserve)} reserve. ` +
+        `Top up ${account.address}.`
     );
   }
 
@@ -273,7 +307,7 @@ const main = async () => {
   }
   if (stillShort.length > 0) {
     fail(
-      `still short after funding: ${stillShort.map(w => w.path).join(', ')}`
+      `still short after funding: ${stillShort.map(w => `${w.env}/${w.path}`).join(', ')}`
     );
   }
   console.log('✓ all addresses funded');

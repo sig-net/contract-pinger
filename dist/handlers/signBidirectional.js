@@ -30,6 +30,13 @@ const toHexString = (value) => {
  * their funding) persist, and so every job in an environment waits on the same
  * `ChainSignatureContract` instance.
  */
+/** Raised at a phase boundary when the process is shutting down. */
+class ShutdownError extends Error {
+    constructor() {
+        super('Process is shutting down; job abandoned before it could proceed');
+        this.name = 'ShutdownError';
+    }
+}
 class BidirectionalService {
     environment;
     pool;
@@ -133,6 +140,10 @@ class BidirectionalService {
     start(mode) {
         const job = this.jobs.create(this.environment, mode);
         void this.run(job).catch(error => {
+            if (error instanceof ShutdownError) {
+                this.jobs.fail(job.id, 'shutdown', error);
+                return;
+            }
             if (error instanceof workerPool_1.NoWorkerAvailableError) {
                 // The pool already knows which of the two it was; collapsing them here
                 // would leave the distinction only in the message text, where no
@@ -161,6 +172,16 @@ class BidirectionalService {
         // recorded as failed, and against the same RPC every other job is using.
         const watches = new AbortController();
         activeJobs.add(watches);
+        // The controller's signal only reaches the event waits, which are created
+        // well into the run. Shutdown arriving during derivation, the preflight, or
+        // the Solana send would otherwise be ignored, and those RPC calls keep the
+        // process alive past its grace period. Checked between phases instead:
+        // in-flight requests cannot be cancelled, but no further work starts.
+        const abortIfShuttingDown = () => {
+            if (watches.signal.aborted) {
+                throw new ShutdownError();
+            }
+        };
         const releaseLease = () => {
             if (worker && !leaseReleased) {
                 this.pool.release(worker.path);
@@ -172,6 +193,7 @@ class BidirectionalService {
             await this.reconcileQuarantined();
             await this.refreshUnderfunded();
             // --- Steps 1-2: derive and preflight -------------------------------
+            abortIfShuttingDown(); // before taking an address
             worker = this.pool.acquire();
             this.jobs.update(job.id, {
                 path: worker.path,
@@ -189,6 +211,7 @@ class BidirectionalService {
                 this.jobs.fail(job.id, 'preflight_underfunded', new Error(`${worker.address} holds ${balance} wei, below the ${bidirectional.minBalanceWei} minimum`));
                 return;
             }
+            abortIfShuttingDown(); // before building the transaction
             let built;
             try {
                 built = await (0, bidirectionalTx_1.buildTransaction)({
@@ -230,6 +253,7 @@ class BidirectionalService {
             });
             this.jobs.update(job.id, { requestId, nonce: built.nonce });
             // --- Step 5: send sign_bidirectional --------------------------------
+            abortIfShuttingDown(); // before the Solana send
             const instruction = await (0, signBidirectionalIx_1.buildSignBidirectionalInstruction)({
                 chainSigContract,
                 requester: keypair.publicKey,
