@@ -65,11 +65,13 @@ describe('POST /sign_bidirectional validation', () => {
     expect(res.body.error).toMatch(/Invalid mode/);
   });
 
-  it('rejects mainnet, which the Sepolia-only Ethereum leg cannot serve', async () => {
+  it('accepts mainnet as an environment, but needs its own RPC', async () => {
+    // Mainnet settles on real Ethereum, so it reads SIG_ETH_RPC_URL_MAINNET
+    // rather than the Sepolia endpoint the other two share.
     const res = await post({ env: 'mainnet' });
     expect(res.status).toBe(400);
-    expect(res.body.error).toBe('Invalid or missing environment parameter');
-    expect(res.body.validEnvironments).toEqual(['dev', 'testnet']);
+    expect(res.body.error).not.toBe('Invalid or missing environment parameter');
+    expect(res.body.error).toMatch(/RPC URL/);
   });
 });
 

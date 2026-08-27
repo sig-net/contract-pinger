@@ -6,20 +6,24 @@ import { app } from '../src/index';
 import { useEnv } from '../src/utils/useEnv';
 
 /**
- * The real round trip: Solana request, MPC signature, Sepolia broadcast, MPC
- * respond. Excluded from `pnpm test` because the respond leg waits for
+ * The real round trip: Solana request, MPC signature, Ethereum broadcast, MPC
+ * respond.
+ *
+ * On `mainnet` this spends real ETH, which is why the service holds that
+ * network to one address and one job a minute regardless of configuration. Excluded from `pnpm test` because the respond leg waits for
  * Ethereum finality — up to thirty-five minutes — and a normal CI run should
  * not be hostage to that. Run with `pnpm test:e2e`.
  */
 
-const REQUIRED = [
-  'SIG_SOL_RPC_URL_DEV',
-  'SIG_SOL_SK',
-  'SIG_ETH_RPC_URL_SEPOLIA',
-];
-const missing = REQUIRED.filter(name => !process.env[name]);
-
 const ENV = process.env.SIG_BIDIRECTIONAL_E2E_ENV || 'dev';
+
+// Each network settles on its own Ethereum and its own Solana cluster, so the
+// credentials a run needs follow from which one it targets.
+const REQUIRED =
+  ENV === 'mainnet'
+    ? ['SIG_SOL_RPC_URL_MAINNET', 'SIG_SOL_SK', 'SIG_ETH_RPC_URL_MAINNET']
+    : ['SIG_SOL_RPC_URL_DEV', 'SIG_SOL_SK', 'SIG_ETH_RPC_URL_SEPOLIA'];
+const missing = REQUIRED.filter(name => !process.env[name]);
 const MODE = process.env.SIG_BIDIRECTIONAL_E2E_MODE || 'eth_self_transfer';
 const POLL_INTERVAL_MS = 10_000;
 

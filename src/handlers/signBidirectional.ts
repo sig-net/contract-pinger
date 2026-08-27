@@ -4,7 +4,8 @@ import type { Hex, PublicClient } from 'viem';
 import {
   buildTransaction,
   attachSignature,
-  createSepoliaClient,
+  createEthereumClient,
+  ETHEREUM_TARGETS,
   ETHEREUM_CAIP2_ID,
   EXPECTED_SERIALIZED_OUTPUT,
   KEY_VERSION,
@@ -67,12 +68,22 @@ export class BidirectionalService {
     rpcUrl: string
   ) {
     const { bidirectional } = useEnv();
+    // Mainnet settles on real Ethereum, so its limits are fixed here rather
+    // than read from configuration: one address, one job a minute. It exists
+    // to answer whether signing and responding still work, and a setting meant
+    // for a testnet load run must not be able to point volume at it.
+    const isMainnet = environment === 'mainnet';
     this.pool = new WorkerPool(
-      buildPaths(bidirectional.pathPrefix, bidirectional.paths)
+      buildPaths(bidirectional.pathPrefix, isMainnet ? 1 : bidirectional.paths)
     );
-    this.jobs = new JobStore(bidirectional.maxJobs, bidirectional.retainedJobs);
-    this.limiter = new RateLimiter(bidirectional.maxRequestsPerMinute);
-    this.client = createSepoliaClient(rpcUrl);
+    this.jobs = new JobStore(
+      isMainnet ? 4 : bidirectional.maxJobs,
+      bidirectional.retainedJobs
+    );
+    this.limiter = new RateLimiter(
+      isMainnet ? 1 : bidirectional.maxRequestsPerMinute
+    );
+    this.client = createEthereumClient(environment, rpcUrl);
   }
 
   private solana() {
@@ -259,9 +270,11 @@ export class BidirectionalService {
       try {
         built = await buildTransaction({
           client: this.client,
+          environment: this.environment,
           mode: job.mode,
           from: worker.address,
-          erc20Address: bidirectional.erc20Address as Hex,
+          erc20Address: (bidirectional.erc20Address ||
+            ETHEREUM_TARGETS[this.environment].erc20) as Hex,
         });
       } catch (error) {
         // A node refusing to estimate for lack of funds is a funding problem,

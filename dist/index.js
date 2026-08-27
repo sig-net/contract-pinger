@@ -138,17 +138,15 @@ app.post('/ping', async (req, res) => {
         }
     }
 });
-// The Ethereum leg is Sepolia-only: the transaction builder pins that chain id
-// and client, so a mainnet request would sign a Sepolia transaction against the
-// mainnet chain-signatures program. Rejected here rather than accepted and
-// failed further in.
-const bidirectionalEnvironments = ['dev', 'testnet'];
+const bidirectionalEnvironments = ['dev', 'testnet', 'mainnet'];
 const resolveBidirectionalService = (env) => {
     if (typeof env !== 'string' ||
         !bidirectionalEnvironments.includes(env)) {
         return { error: 'Invalid or missing environment parameter' };
     }
-    const rpcUrl = process.env.SIG_ETH_RPC_URL_SEPOLIA;
+    // Each network settles on its own Ethereum, so the RPC follows the target
+    // rather than being fixed to Sepolia.
+    const rpcUrl = process.env[bidirectionalTx_1.ETHEREUM_TARGETS[env].rpcVar];
     if (!rpcUrl) {
         return {
             error: 'Missing Ethereum RPC URL for selected environment',

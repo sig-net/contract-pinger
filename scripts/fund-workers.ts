@@ -25,7 +25,6 @@ import {
   type Hex,
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { sepolia } from 'viem/chains';
 
 import {
   deriveWorkerAddresses,
@@ -33,12 +32,16 @@ import {
 } from '../src/utils/derivation';
 import { buildChainSignatureContract } from '../src/utils/initSolana';
 import {
-  createSepoliaClient,
-  SEPOLIA_CHAIN_ID,
+  createEthereumClient,
+  ETHEREUM_TARGETS,
 } from '../src/utils/bidirectionalTx';
 import { buildPaths } from '../src/utils/workerPool';
 
-const ENVIRONMENTS = { dev: 'TESTNET_DEV', testnet: 'TESTNET' } as const;
+const ENVIRONMENTS = {
+  dev: 'TESTNET_DEV',
+  testnet: 'TESTNET',
+  mainnet: 'MAINNET',
+} as const;
 /** Intrinsic cost of a value transfer to an account with no code. */
 const PLAIN_TRANSFER_GAS = 21_000n;
 type Env = keyof typeof ENVIRONMENTS;
@@ -74,8 +77,17 @@ const main = async () => {
   const fundingKey = process.env.SIG_BIDIRECTIONAL_FUNDING_SK;
   if (!fundingKey) fail('SIG_BIDIRECTIONAL_FUNDING_SK is not set');
 
-  const rpcUrl = process.env.SIG_ETH_RPC_URL_SEPOLIA;
-  if (!rpcUrl) fail('SIG_ETH_RPC_URL_SEPOLIA is not set');
+  // Every network in one run must settle on the same Ethereum: a single wallet
+  // sends the transfers, and its nonce sequence belongs to one chain.
+  const targets = new Set(envs.map(e => ETHEREUM_TARGETS[e].rpcVar));
+  if (targets.size > 1) {
+    fail(
+      `${envs.join(', ')} settle on different Ethereum networks. Fund them in separate runs.`
+    );
+  }
+  const rpcVar = ETHEREUM_TARGETS[envs[0]].rpcVar;
+  const rpcUrl = process.env[rpcVar];
+  if (!rpcUrl) fail(`${rpcVar} is not set`);
 
   // Public by construction — the requester is SIG_SOL_SK's *public* key. It
   // must match the deployed service exactly: rotating that keypair moves every
@@ -191,12 +203,11 @@ const main = async () => {
     workers.push(...derived.map(d => ({ ...d, env })));
   }
 
-  const client = createSepoliaClient(rpcUrl!);
+  const client = createEthereumClient(envs[0], rpcUrl!);
   const chainId = await client.getChainId();
-  if (chainId !== SEPOLIA_CHAIN_ID) {
-    fail(
-      `RPC reports chain ${chainId}, expected Sepolia (${SEPOLIA_CHAIN_ID})`
-    );
+  const expectedChainId = ETHEREUM_TARGETS[envs[0]].chainId;
+  if (chainId !== expectedChainId) {
+    fail(`RPC reports chain ${chainId}, expected ${expectedChainId}`);
   }
 
   const account = privateKeyToAccount(
@@ -271,7 +282,7 @@ const main = async () => {
   // --- send, and confirm ---------------------------------------------------
   const wallet = createWalletClient({
     account,
-    chain: sepolia,
+    chain: ETHEREUM_TARGETS[envs[0]].chain,
     transport: http(rpcUrl!),
   });
 

@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.attachSignature = exports.buildTransaction = exports.createSepoliaClient = exports.EXPECTED_SERIALIZED_OUTPUT = exports.KEY_VERSION = exports.SEPOLIA_CHAIN_ID = exports.ETHEREUM_CAIP2_ID = exports.isTxMode = exports.TX_MODES = void 0;
+exports.attachSignature = exports.buildTransaction = exports.createEthereumClient = exports.EXPECTED_SERIALIZED_OUTPUT = exports.ETHEREUM_TARGETS = exports.KEY_VERSION = exports.ETHEREUM_CAIP2_ID = exports.isTxMode = exports.TX_MODES = void 0;
 const viem_1 = require("viem");
 const chains_1 = require("viem/chains");
 const utils_1 = require("viem/utils");
@@ -10,11 +10,38 @@ exports.isTxMode = isTxMode;
 /**
  * MPC nodes recognise only mainnet CAIP-2 ids, so a Sepolia transaction is
  * still announced as `eip155:1`. The chain id inside the signed transaction is
- * what actually selects the network.
+ * what actually selects the network, which is why this constant does not vary
+ * with the target below.
  */
 exports.ETHEREUM_CAIP2_ID = 'eip155:1';
-exports.SEPOLIA_CHAIN_ID = 11155111;
 exports.KEY_VERSION = 1;
+/**
+ * Which Ethereum each MPC network's round trip settles on.
+ *
+ * `dev` and `testnet` both sign for Sepolia; `mainnet` signs for Ethereum
+ * mainnet and therefore spends real ETH on every job. The per-network limits
+ * that keep that from becoming expensive live in the service, not here.
+ */
+exports.ETHEREUM_TARGETS = {
+    dev: {
+        chain: chains_1.sepolia,
+        chainId: 11155111,
+        rpcVar: 'SIG_ETH_RPC_URL_SEPOLIA',
+        erc20: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
+    },
+    testnet: {
+        chain: chains_1.sepolia,
+        chainId: 11155111,
+        rpcVar: 'SIG_ETH_RPC_URL_SEPOLIA',
+        erc20: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
+    },
+    mainnet: {
+        chain: chains_1.mainnet,
+        chainId: 1,
+        rpcVar: 'SIG_ETH_RPC_URL_MAINNET',
+        erc20: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+    },
+};
 /**
  * Both modes resolve to a single Borsh-encoded `true`.
  *
@@ -46,11 +73,11 @@ const ERC20_TRANSFER_ABI = [
     },
 ];
 const GAS_BUFFER_PERCENT = 20n;
-const createSepoliaClient = (rpcUrl) => (0, viem_1.createPublicClient)({
-    chain: chains_1.sepolia,
+const createEthereumClient = (environment, rpcUrl) => (0, viem_1.createPublicClient)({
+    chain: exports.ETHEREUM_TARGETS[environment].chain,
     transport: (0, viem_1.http)(rpcUrl),
 });
-exports.createSepoliaClient = createSepoliaClient;
+exports.createEthereumClient = createEthereumClient;
 /**
  * Build the unsigned transaction for a mode.
  *
@@ -60,7 +87,7 @@ exports.createSepoliaClient = createSepoliaClient;
  * `transfer(self, 0)`, which is valid for any ERC20 regardless of balance and
  * is the only mode that drives the node's trace-based extraction path.
  */
-const buildTransaction = async ({ client, mode, from, erc20Address, }) => {
+const buildTransaction = async ({ client, environment, mode, from, erc20Address, }) => {
     const [nonce, fees] = await Promise.all([
         client.getTransactionCount({ address: from, blockTag: 'latest' }),
         client.estimateFeesPerGas(),
@@ -83,7 +110,7 @@ const buildTransaction = async ({ client, mode, from, erc20Address, }) => {
     const gas = (gasEstimate * (100n + GAS_BUFFER_PERCENT)) / 100n;
     const unsigned = {
         type: 'eip1559',
-        chainId: exports.SEPOLIA_CHAIN_ID,
+        chainId: exports.ETHEREUM_TARGETS[environment].chainId,
         nonce,
         to,
         value: 0n,

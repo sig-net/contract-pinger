@@ -9,7 +9,12 @@ import {
   listServices as listBidirectionalServices,
 } from './handlers/signBidirectional';
 import { buildStats } from './jobs/stats';
-import { isTxMode, TX_MODES } from './utils/bidirectionalTx';
+import {
+  ETHEREUM_TARGETS,
+  isTxMode,
+  TX_MODES,
+  type BidirectionalEnvironment,
+} from './utils/bidirectionalTx';
 import { useEnv } from './utils/useEnv';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
@@ -136,11 +141,7 @@ app.post(
   }
 );
 
-// The Ethereum leg is Sepolia-only: the transaction builder pins that chain id
-// and client, so a mainnet request would sign a Sepolia transaction against the
-// mainnet chain-signatures program. Rejected here rather than accepted and
-// failed further in.
-const bidirectionalEnvironments = ['dev', 'testnet'] as const;
+const bidirectionalEnvironments = ['dev', 'testnet', 'mainnet'] as const;
 
 const resolveBidirectionalService = (env: unknown) => {
   if (
@@ -149,7 +150,10 @@ const resolveBidirectionalService = (env: unknown) => {
   ) {
     return { error: 'Invalid or missing environment parameter' as const };
   }
-  const rpcUrl = process.env.SIG_ETH_RPC_URL_SEPOLIA;
+  // Each network settles on its own Ethereum, so the RPC follows the target
+  // rather than being fixed to Sepolia.
+  const rpcUrl =
+    process.env[ETHEREUM_TARGETS[env as BidirectionalEnvironment].rpcVar];
   if (!rpcUrl) {
     return {
       error: 'Missing Ethereum RPC URL for selected environment' as const,

@@ -47,10 +47,15 @@ class BidirectionalService {
     constructor(environment, rpcUrl) {
         this.environment = environment;
         const { bidirectional } = (0, useEnv_1.useEnv)();
-        this.pool = new workerPool_1.WorkerPool((0, workerPool_1.buildPaths)(bidirectional.pathPrefix, bidirectional.paths));
-        this.jobs = new store_1.JobStore(bidirectional.maxJobs, bidirectional.retainedJobs);
-        this.limiter = new rateLimiter_1.RateLimiter(bidirectional.maxRequestsPerMinute);
-        this.client = (0, bidirectionalTx_1.createSepoliaClient)(rpcUrl);
+        // Mainnet settles on real Ethereum, so its limits are fixed here rather
+        // than read from configuration: one address, one job a minute. It exists
+        // to answer whether signing and responding still work, and a setting meant
+        // for a testnet load run must not be able to point volume at it.
+        const isMainnet = environment === 'mainnet';
+        this.pool = new workerPool_1.WorkerPool((0, workerPool_1.buildPaths)(bidirectional.pathPrefix, isMainnet ? 1 : bidirectional.paths));
+        this.jobs = new store_1.JobStore(isMainnet ? 4 : bidirectional.maxJobs, bidirectional.retainedJobs);
+        this.limiter = new rateLimiter_1.RateLimiter(isMainnet ? 1 : bidirectional.maxRequestsPerMinute);
+        this.client = (0, bidirectionalTx_1.createEthereumClient)(environment, rpcUrl);
     }
     solana() {
         return (0, initSolana_1.getSharedSolana)({
@@ -216,9 +221,11 @@ class BidirectionalService {
             try {
                 built = await (0, bidirectionalTx_1.buildTransaction)({
                     client: this.client,
+                    environment: this.environment,
                     mode: job.mode,
                     from: worker.address,
-                    erc20Address: bidirectional.erc20Address,
+                    erc20Address: (bidirectional.erc20Address ||
+                        bidirectionalTx_1.ETHEREUM_TARGETS[this.environment].erc20),
                 });
             }
             catch (error) {

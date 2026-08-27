@@ -15,9 +15,9 @@ import {
 import { JobStore } from '../src/jobs/store';
 import {
   attachSignature,
+  ETHEREUM_TARGETS,
   EXPECTED_SERIALIZED_OUTPUT,
   isTxMode,
-  SEPOLIA_CHAIN_ID,
 } from '../src/utils/bidirectionalTx';
 import {
   assertDerivedSender,
@@ -273,6 +273,14 @@ describe('transaction modes', () => {
   it('expects a single Borsh true from both modes', () => {
     expect(EXPECTED_SERIALIZED_OUTPUT).toBe('0x01');
   });
+
+  it('signs for the Ethereum each network actually settles on', () => {
+    // The CAIP-2 id announced to the MPC is always mainnet's, so the chain id
+    // inside the transaction is the only thing separating the two networks.
+    expect(ETHEREUM_TARGETS.dev.chainId).toBe(11155111);
+    expect(ETHEREUM_TARGETS.testnet.chainId).toBe(11155111);
+    expect(ETHEREUM_TARGETS.mainnet.chainId).toBe(1);
+  });
 });
 
 describe('signature attachment and derivation check', () => {
@@ -282,7 +290,7 @@ describe('signature attachment and derivation check', () => {
 
   const unsigned: TransactionSerializableEIP1559 = {
     type: 'eip1559',
-    chainId: SEPOLIA_CHAIN_ID,
+    chainId: ETHEREUM_TARGETS.testnet.chainId,
     nonce: 7,
     to: account.address,
     value: 0n,

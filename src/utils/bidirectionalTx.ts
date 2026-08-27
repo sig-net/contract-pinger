@@ -8,7 +8,7 @@ import {
   type PublicClient,
   type TransactionSerializableEIP1559,
 } from 'viem';
-import { sepolia } from 'viem/chains';
+import { mainnet, sepolia } from 'viem/chains';
 import { keccak256 } from 'viem/utils';
 
 export const TX_MODES = ['eth_self_transfer', 'erc20_zero_transfer'] as const;
@@ -20,11 +20,41 @@ export const isTxMode = (value: unknown): value is TxMode =>
 /**
  * MPC nodes recognise only mainnet CAIP-2 ids, so a Sepolia transaction is
  * still announced as `eip155:1`. The chain id inside the signed transaction is
- * what actually selects the network.
+ * what actually selects the network, which is why this constant does not vary
+ * with the target below.
  */
 export const ETHEREUM_CAIP2_ID = 'eip155:1';
-export const SEPOLIA_CHAIN_ID = 11155111;
 export const KEY_VERSION = 1;
+
+export type BidirectionalEnvironment = 'dev' | 'testnet' | 'mainnet';
+
+/**
+ * Which Ethereum each MPC network's round trip settles on.
+ *
+ * `dev` and `testnet` both sign for Sepolia; `mainnet` signs for Ethereum
+ * mainnet and therefore spends real ETH on every job. The per-network limits
+ * that keep that from becoming expensive live in the service, not here.
+ */
+export const ETHEREUM_TARGETS = {
+  dev: {
+    chain: sepolia,
+    chainId: 11155111,
+    rpcVar: 'SIG_ETH_RPC_URL_SEPOLIA',
+    erc20: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
+  },
+  testnet: {
+    chain: sepolia,
+    chainId: 11155111,
+    rpcVar: 'SIG_ETH_RPC_URL_SEPOLIA',
+    erc20: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
+  },
+  mainnet: {
+    chain: mainnet,
+    chainId: 1,
+    rpcVar: 'SIG_ETH_RPC_URL_MAINNET',
+    erc20: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+  },
+} as const satisfies Record<BidirectionalEnvironment, unknown>;
 
 /**
  * Both modes resolve to a single Borsh-encoded `true`.
@@ -64,9 +94,12 @@ const ERC20_TRANSFER_ABI = [
 
 const GAS_BUFFER_PERCENT = 20n;
 
-export const createSepoliaClient = (rpcUrl: string): PublicClient =>
+export const createEthereumClient = (
+  environment: BidirectionalEnvironment,
+  rpcUrl: string
+): PublicClient =>
   createPublicClient({
-    chain: sepolia,
+    chain: ETHEREUM_TARGETS[environment].chain,
     transport: http(rpcUrl),
   }) as PublicClient;
 
@@ -91,11 +124,13 @@ export interface BuiltTransaction {
  */
 export const buildTransaction = async ({
   client,
+  environment,
   mode,
   from,
   erc20Address,
 }: {
   client: PublicClient;
+  environment: BidirectionalEnvironment;
   mode: TxMode;
   from: Hex;
   erc20Address: Hex;
@@ -125,7 +160,7 @@ export const buildTransaction = async ({
 
   const unsigned: TransactionSerializableEIP1559 = {
     type: 'eip1559',
-    chainId: SEPOLIA_CHAIN_ID,
+    chainId: ETHEREUM_TARGETS[environment].chainId,
     nonce,
     to,
     value: 0n,

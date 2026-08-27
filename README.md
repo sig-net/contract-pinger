@@ -60,8 +60,10 @@ leg waits for Ethereum finality. Run it on its own:
 pnpm test:e2e
 ```
 
-It skips itself when `SIG_SOL_RPC_URL_DEV`, `SIG_SOL_SK` or
-`SIG_ETH_RPC_URL_SEPOLIA` are unset.
+`SIG_BIDIRECTIONAL_E2E_ENV` selects the network, and the credentials it needs
+follow from that — `SIG_SOL_RPC_URL_DEV` and `SIG_ETH_RPC_URL_SEPOLIA` for
+`dev` and `testnet`, their `_MAINNET` counterparts for `mainnet`. It skips
+itself when any are unset.
 
 ### Code Formatting
 
@@ -90,8 +92,15 @@ This will automatically format your codebase according to the project's style ru
 `POST /sign_bidirectional` drives one full round trip: a `sign_bidirectional`
 request on Solana, an MPC signature, a broadcast on Sepolia, and the MPC
 reading that transaction's result back. It calls the chain-signatures program
-directly, so no vault program or deployment is involved. `dev` and `testnet`
-are supported; the Ethereum leg is Sepolia-only, so `mainnet` is rejected.
+directly, so no vault program or deployment is involved.
+
+`dev` and `testnet` both settle on Sepolia. `mainnet` settles on Ethereum
+mainnet and therefore spends real ETH on every job, so the service holds it to
+**one derived address and one job a minute**, fixed in code rather than read
+from configuration — it exists to answer whether mainnet signing and responding
+still work, and a setting meant for a testnet load run must not be able to point
+volume at it. The `Bidirectional Mainnet Canary` workflow runs one round trip a
+day.
 
 It is asynchronous because the respond leg waits for Ethereum finality — up to
 thirty-five minutes — which no proxy will hold a connection open for. `POST`
