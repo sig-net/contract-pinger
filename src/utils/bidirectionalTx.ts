@@ -9,6 +9,7 @@ import {
   type TransactionSerializableEIP1559,
 } from 'viem';
 import { mainnet, sepolia } from 'viem/chains';
+import { chainAdapters } from 'signet.js';
 import { keccak256 } from 'viem/utils';
 
 export const TX_MODES = ['eth_self_transfer', 'erc20_zero_transfer'] as const;
@@ -188,9 +189,6 @@ export interface RsvSignature {
   v: number | string | bigint;
 }
 
-const hex = (value: string): Hex =>
-  (value.startsWith('0x') ? value : `0x${value}`) as Hex;
-
 /**
  * Attach an MPC signature to the unsigned transaction and recover the sender
  * it actually produces.
@@ -201,12 +199,11 @@ const hex = (value: string): Hex =>
  * address. Catching that here costs nothing; catching it after broadcast costs
  * a stuck nonce.
  *
- * Not routed through signet.js's `EVM#finalizeTransactionSigning`, which is a
- * one-line wrapper over the same `serializeTransaction` call and whose
- * `transformRSVSignature` hardcodes `v - 27`. The MPC sends `v` as 0/1 as well
- * as 27/28, so using it would mean normalizing to 27/28 purely for the adapter
- * to subtract 27 again — and it would require constructing an adapter, with a
- * client, to call what is otherwise a pure function.
+ * Assembly is signet.js's, so a change to how it serializes or transforms a
+ * signature reaches this code rather than leaving a private copy to diverge.
+ * The adapter needs neither a client nor a contract for this — it touches
+ * those only for RPC — so it is constructed here and the function stays pure
+ * and directly testable.
  */
 export const attachSignature = async ({
   unsigned,
@@ -215,20 +212,36 @@ export const attachSignature = async ({
   unsigned: TransactionSerializableEIP1559;
   signature: RsvSignature;
 }): Promise<{ serialized: Hex; recoveredFrom: Hex }> => {
-  const v = BigInt(signature.v);
-  const serialized = serializeTransaction(unsigned, {
-    r: hex(signature.r),
-    s: hex(signature.s),
-    // viem wants yParity for EIP-1559; MPC nodes report v as 0/1 or 27/28.
-    yParity: Number(v >= 27n ? v - 27n : v),
-  });
+  // `transformRSVSignature` computes `v - 27`, so the value has to arrive in
+  // that form. The MPC reports `v` either way — 0/1 and 27/28 have both been
+  // observed — and normalizing here is what makes the two equivalent.
+  const rawV = BigInt(signature.v);
+  const rsv = {
+    r: signature.r.replace(/^0x/, ''),
+    s: signature.s.replace(/^0x/, ''),
+    v: Number(rawV < 27n ? rawV + 27n : rawV),
+  };
 
+  const adapter = new chainAdapters.evm.EVM({
+    publicClient: undefined as never,
+    contract: undefined as never,
+  });
+  const serialized = adapter.finalizeTransactionSigning({
+    transaction: unsigned as never,
+    rsvSignatures: [rsv],
+  }) as Hex;
+
+  // Recovery stays ours: the adapter attaches a signature but never checks
+  // whose it is. The MPC signs the bytes we emitted, so a reassembly differing
+  // by even a field ordering recovers to something other than the derived
+  // address — catching that here costs nothing, catching it after broadcast
+  // costs a stuck nonce.
   const recoveredFrom = await recoverAddress({
     hash: keccak256(serializeTransaction(unsigned)),
     signature: {
-      r: hex(signature.r),
-      s: hex(signature.s),
-      yParity: Number(v >= 27n ? v - 27n : v),
+      r: `0x${rsv.r}` as Hex,
+      s: `0x${rsv.s}` as Hex,
+      yParity: rsv.v - 27,
     },
   });
 

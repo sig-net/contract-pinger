@@ -386,6 +386,32 @@ describe('signature attachment and derivation check', () => {
     ).toThrowError(DerivationMismatchError);
   });
 
+  it('accepts v in either form the MPC reports it', async () => {
+    // signet.js's transformRSVSignature computes v - 27, so 0/1 has to be
+    // normalized before it. Both forms have been observed from the network.
+    const signature = await sign({
+      hash: keccak256(serializeTransaction(unsigned)),
+      privateKey,
+    });
+    const legacy = await attachSignature({
+      unsigned,
+      signature: { r: signature.r, s: signature.s, v: Number(signature.v) },
+    });
+    const parity = await attachSignature({
+      unsigned,
+      signature: {
+        r: signature.r,
+        s: signature.s,
+        v: Number(BigInt(signature.v!) - 27n),
+      },
+    });
+
+    expect(legacy.serialized).toBe(parity.serialized);
+    expect(legacy.recoveredFrom.toLowerCase()).toBe(
+      account.address.toLowerCase()
+    );
+  });
+
   it('rejects a signature over different bytes than the transaction carries', async () => {
     // Signing a transaction that differs only in nonce stands in for any
     // serialization drift between what we announced and what we rebuild.
