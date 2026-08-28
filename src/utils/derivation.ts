@@ -6,46 +6,6 @@ type ChainSigContract = InstanceType<
   typeof contracts.solana.ChainSignatureContract
 >;
 
-/**
- * Derive the Ethereum address a `(requester, path)` pair controls.
- *
- * `getDerivedPublicKey` already wraps `deriveChildPublicKey` with the Solana
- * KDF chain id and whichever root key the contract resolved — the configured
- * override, or the one signet.js paired to the program address.
- */
-/**
- * Derive the Ethereum address a `(requester, path)` pair controls.
- *
- * Delegated to signet.js's EVM adapter rather than reimplemented: it applies
- * the same keccak-and-truncate over the same derived public key, and keeping
- * one implementation means a change upstream cannot silently leave this one
- * deriving different addresses than the ones jobs actually sign from.
- */
-const deriveEthAddress = async ({
-  chainSigContract,
-  client,
-  predecessor,
-  path,
-}: {
-  chainSigContract: ChainSigContract;
-  client: PublicClient;
-  predecessor: string;
-  path: string;
-}): Promise<Hex> => {
-  // The client is unused here — derivation is pure crypto over the contract's
-  // root key — but the adapter takes one to construct.
-  const adapter = new chainAdapters.evm.EVM({
-    publicClient: client,
-    contract: chainSigContract,
-  });
-  const { address } = await adapter.deriveAddressAndPublicKey(
-    predecessor,
-    path,
-    KEY_VERSION
-  );
-  return address as Hex;
-};
-
 export interface DerivedWorker {
   path: string;
   address: Hex;
@@ -75,17 +35,22 @@ export const deriveWorkerAddresses = async ({
   requester: string;
   paths: readonly string[];
 }): Promise<DerivedWorker[]> => {
+  // One adapter for the whole set: it holds no per-path state, and derivation
+  // is pure crypto over the contract's root key. The client goes unused here —
+  // the adapter takes one to construct, for the RPC methods this never calls.
+  const adapter = new chainAdapters.evm.EVM({
+    publicClient: client,
+    contract: chainSigContract,
+  });
+
   const derived: DerivedWorker[] = [];
   for (const path of paths) {
-    derived.push({
+    const { address } = await adapter.deriveAddressAndPublicKey(
+      requester,
       path,
-      address: await deriveEthAddress({
-        chainSigContract,
-        client,
-        predecessor: requester,
-        path,
-      }),
-    });
+      KEY_VERSION
+    );
+    derived.push({ path, address: address as Hex });
   }
   return derived;
 };
