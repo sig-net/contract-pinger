@@ -7,7 +7,9 @@ on:
     branches: [main]
 
 jobs:
-  check-generated-build:
+  # `dist/` is no longer committed, so nothing checks that the artifact matches
+  # its source. What still needs checking is that the source compiles at all.
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,17 +20,8 @@ jobs:
           cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install
-      - name: Run build
+      - name: Build
         run: pnpm build
-      - name: Check for uncommitted changes after build
-        run: |
-          git update-index --assume-unchanged pnpm-lock.yaml
-          if ! git diff --exit-code; then
-            echo 'Build produced uncommitted changes (excluding lock file). Please run pnpm build and commit the results.'
-            git diff
-            exit 1
-          fi
-          git update-index --no-assume-unchanged pnpm-lock.yaml
 
   prettier-check:
     runs-on: ubuntu-latest
