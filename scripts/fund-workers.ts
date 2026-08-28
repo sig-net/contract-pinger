@@ -172,24 +172,43 @@ const main = async () => {
     return;
   }
 
-  // Public by construction — the requester is SIG_SOL_SK's *public* key. It
-  // must match the deployed service exactly: rotating that keypair moves every
-  // address below, and this script would then fund addresses nothing spends
-  // from while the real ones run dry.
-  const requester =
-    process.env.SIG_BIDIRECTIONAL_REQUESTER_PUBKEY ??
-    (env.solSk
-      ? Keypair.fromSecretKey(
-          new Uint8Array(JSON.parse(env.solSk))
-        ).publicKey.toBase58()
-      : undefined);
-  if (!requester) {
+  // Derived from the signing key rather than configured, so there is nothing
+  // to keep in step: the requester *is* SIG_SOL_SK's public key, and every
+  // worker address follows from it. Configuring it separately would mean two
+  // places that can disagree, and disagreeing means funding addresses no job
+  // will ever spend from while the real pool runs dry.
+  const derivedRequester = env.solSk
+    ? Keypair.fromSecretKey(
+        new Uint8Array(JSON.parse(env.solSk))
+      ).publicKey.toBase58()
+    : undefined;
+
+  // Optional, and only ever a check. Set it when this runs against a service
+  // holding a different key — a mismatch then fails the run instead of
+  // silently funding the wrong addresses.
+  const expectedRequester = process.env.SIG_BIDIRECTIONAL_REQUESTER_PUBKEY;
+  if (
+    expectedRequester &&
+    derivedRequester &&
+    expectedRequester !== derivedRequester
+  ) {
     fail(
-      "Set SIG_BIDIRECTIONAL_REQUESTER_PUBKEY to the deployed service's Solana public key " +
-        '(or SIG_SOL_SK locally, from which it is derived)'
+      `SIG_SOL_SK derives requester ${derivedRequester}, but ` +
+        `SIG_BIDIRECTIONAL_REQUESTER_PUBKEY says ${expectedRequester}. ` +
+        'Every worker address follows from this key, so the two must agree.'
     );
     return;
   }
+
+  const requester = derivedRequester ?? expectedRequester;
+  if (!requester) {
+    fail(
+      'Set SIG_SOL_SK to the key the service signs with (the requester is its ' +
+        'public key), or SIG_BIDIRECTIONAL_REQUESTER_PUBKEY to that public key directly'
+    );
+    return;
+  }
+
   new PublicKey(requester); // rejects a malformed value before anything is sent
 
   // --- safety limits ------------------------------------------------------

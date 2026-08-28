@@ -196,10 +196,12 @@ for each top-up receipt before reporting success, and refuses to send beyond
 its per-address and per-run caps or below the funding wallet's reserve.
 
 The addresses follow from `(requester, path)`, where the requester is the
-**public** key of `SIG_SOL_SK`. Rotating that keypair moves every address, so
-the workflow's `SIG_BIDIRECTIONAL_REQUESTER_PUBKEY` must match the deployed
-service. Each environment derives a different set, since its program address
-pairs to a different root key.
+**public** key of `SIG_SOL_SK` — so the sweep derives it from that key rather
+than being told it separately, and rotating the keypair moves the addresses on
+both sides at once. `SIG_BIDIRECTIONAL_REQUESTER_PUBKEY` exists only as an
+optional cross-check for the case where the sweep runs against a service
+holding a different key; a mismatch fails the run. Each environment derives a
+different set, since its program address pairs to a different root key.
 
 Sizing the band: an address needs enough headroom to survive until the next
 sweep, including a late one.

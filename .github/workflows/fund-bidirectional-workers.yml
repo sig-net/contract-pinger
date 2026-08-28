@@ -48,9 +48,13 @@ jobs:
       SIG_ETH_RPC_URL_SEPOLIA: ${{ secrets.SIG_ETH_RPC_URL_SEPOLIA }}
       SIG_SOL_RPC_URL_DEV: ${{ secrets.SIG_SOL_RPC_URL_DEV }}
       SIG_BIDIRECTIONAL_FUNDING_SK: ${{ secrets.SIG_BIDIRECTIONAL_FUNDING_SK }}
-      # Public by construction — the requester is a public key. It must match
-      # the deployed service's SIG_SOL_SK, since rotating that keypair moves
-      # every derived address.
+      # The worker addresses follow from this key's *public* half, so the sweep
+      # derives the requester rather than being told it. Passed here as the
+      # same secret the service signs with, so the two cannot drift.
+      SIG_SOL_SK: ${{ secrets.SIG_SOL_SK }}
+      # Optional cross-check. Set it only when this runs against a service
+      # holding a different key; a mismatch then fails the run rather than
+      # funding addresses nothing spends from.
       SIG_BIDIRECTIONAL_REQUESTER_PUBKEY: ${{ vars.SIG_BIDIRECTIONAL_REQUESTER_PUBKEY }}
       SIG_BIDIRECTIONAL_PATHS: ${{ vars.SIG_BIDIRECTIONAL_PATHS || '10' }}
       SIG_BIDIRECTIONAL_PATH_PREFIX: ${{ vars.SIG_BIDIRECTIONAL_PATH_PREFIX || 'load' }}
@@ -93,7 +97,7 @@ jobs:
         run: |
           set -euo pipefail
           for name in SIG_ETH_RPC_URL_SEPOLIA SIG_SOL_RPC_URL_DEV \
-                      SIG_BIDIRECTIONAL_FUNDING_SK SIG_BIDIRECTIONAL_REQUESTER_PUBKEY; do
+                      SIG_BIDIRECTIONAL_FUNDING_SK SIG_SOL_SK; do
             if [ -z "${!name:-}" ]; then
               echo "::error::Missing required configuration: ${name}"
               exit 1
