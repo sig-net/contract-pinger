@@ -1,15 +1,33 @@
 name: Solana Bidirectional (ad hoc)
 
-# On demand only. Runs the full round trip from CI against the code on a
-# branch, so a change can be exercised without local setup.
+# Runs a load test entirely inside the job: it starts a pinger, drives it, and
+# throws it away. Nothing external is touched beyond the chains themselves, so
+# this needs no access to the deployed service and cannot disturb it.
 #
-# Deliberately unscheduled: the derived addresses are a function of this
-# environment's SIG_SOL_SK, so a schedule would need its own funded addresses
-# maintained solely to keep this green. Scheduled monitoring belongs against
-# the deployed service, where it can report somewhere.
+# The addresses under test are derived from this environment's SIG_SOL_SK and
+# from the chosen network's program, so each network has its own pool and both
+# have to be funded separately. `pnpm fund` derives the same sets from the same
+# key.
+#
+# Unscheduled on purpose: every job spends gas from addresses only a sweep
+# refills, so a recurring run is a standing cost that should be chosen rather
+# than inherited.
 on:
   workflow_dispatch:
     inputs:
+      jobs:
+        description: Round trips to drive
+        required: false
+        default: '50'
+        type: string
+      env:
+        description: MPC network
+        required: false
+        default: testnet
+        type: choice
+        options:
+          - dev
+          - testnet
       mode:
         description: Transaction mode
         required: false
@@ -18,43 +36,37 @@ on:
         options:
           - eth_self_transfer
           - erc20_zero_transfer
-      env:
-        description: MPC network
+      paths:
+        description: Derived addresses to spread jobs across
         required: false
-        default: dev
-        type: choice
-        options:
-          - dev
-          - testnet
+        default: '10'
+        type: string
 
 permissions:
   contents: read
 
-# The address pool is shared state: two runs would contend for the same
-# derived addresses and their nonces.
+# The derived addresses are shared state: two runs would lease the same ones
+# and collide on their nonces.
 concurrency:
   group: sol-bidirectional-adhoc
   cancel-in-progress: false
 
 jobs:
-  round-trip:
+  loadtest:
     runs-on: ubuntu-latest
-    timeout-minutes: 70
+    # Submission is bounded by the arrival-rate limit and the last job then
+    # waits out Ethereum finality: roughly `jobs / rate` minutes plus forty.
+    timeout-minutes: 120
     environment: Pinger Test ENV
     env:
-      API_SECRET: monitor-secret
+      # This job's own server, so the secret is local to the job rather than
+      # anything deployed.
+      API_SECRET: adhoc-loadtest
+      PORT: '3001'
       SIG_ETH_RPC_URL_SEPOLIA: ${{ secrets.SIG_ETH_RPC_URL_SEPOLIA }}
-      SIG_EVM_SK_1: ${{ secrets.SIG_EVM_SK_1 }}
-      SIG_EVM_SK_2: ${{ secrets.SIG_EVM_SK_2 }}
-      SIG_EVM_SK_3: ${{ secrets.SIG_EVM_SK_3 }}
-      SIG_EVM_SK_4: ${{ secrets.SIG_EVM_SK_4 }}
-      SIG_EVM_SK_5: ${{ secrets.SIG_EVM_SK_5 }}
       SIG_SOL_RPC_URL_DEV: ${{ secrets.SIG_SOL_RPC_URL_DEV }}
       SIG_SOL_SK: ${{ secrets.SIG_SOL_SK }}
-      # One address is enough for a monitor; the pool matters under load.
-      SIG_BIDIRECTIONAL_PATHS: '1'
-      SIG_BIDIRECTIONAL_E2E_ENV: ${{ inputs.env || 'dev' }}
-      SIG_BIDIRECTIONAL_E2E_MODE: ${{ inputs.mode || 'eth_self_transfer' }}
+      SIG_BIDIRECTIONAL_PATHS: ${{ inputs.paths || '10' }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -76,8 +88,72 @@ jobs:
             fi
           done
 
-      - name: Run bidirectional round trip
-        run: pnpm test:e2e
+      - name: Build
+        run: pnpm build
+
+      - name: Start the pinger
+        run: |
+          set -euo pipefail
+          # `node` directly, not `pnpm start`: pnpm forks the server as a
+          # child, so `$!` would capture the wrapper and the stop step below
+          # would leave the real process running.
+          node dist/index.js > pinger.log 2>&1 &
+          echo $! > pinger.pid
+          for _ in $(seq 1 30); do
+            if curl -sf "http://localhost:${PORT}/" > /dev/null; then
+              echo "pinger up"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::Pinger did not start"
+          cat pinger.log
+          exit 1
+
+      # Reports each address and its balance before anything is spent, so a run
+      # that cannot broadcast says so now rather than after submitting jobs.
+      - name: Check worker funding
+        run: |
+          set -euo pipefail
+          curl -sS --fail-with-body \
+            -H "x-api-secret: ${API_SECRET}" \
+            "http://localhost:${PORT}/sign_bidirectional/workers?env=${ENV}" \
+            | tee workers.json \
+            | jq -r '.workers[] | "  \(.path)  \(.address)  \(.balanceWei) wei\(if .underfunded then "  UNDERFUNDED" else "" end)"'
+
+          short=$(jq '[.workers[] | select(.underfunded)] | length' workers.json)
+          total=$(jq '.workers | length' workers.json)
+          echo "${short}/${total} addresses below the minimum"
+          if [ "${short}" -eq "${total}" ]; then
+            echo "::error::Every address is underfunded. Fund the addresses above, or run Fund Bidirectional Workers."
+            exit 1
+          fi
+          if [ "${short}" -gt 0 ]; then
+            echo "::warning::${short} address(es) underfunded; throughput is limited to the rest"
+          fi
+        env:
+          ENV: ${{ inputs.env || 'testnet' }}
+
+      # The driver exits non-zero if any job failed, so a single MPC timeout in
+      # fifty reds the run. Deliberate for an on-request test that a person
+      # reads: the summary below renders either way, and green means every
+      # round trip completed rather than most of them.
+      - name: Drive the load test
+        run: |
+          set -euo pipefail
+          pnpm loadtest \
+            --jobs "${{ inputs.jobs || '50' }}" \
+            --env "${{ inputs.env || 'testnet' }}" \
+            --mode "${{ inputs.mode || 'eth_self_transfer' }}" \
+            --url "http://localhost:${PORT}" \
+            | tee loadtest.log
+
+      - name: Stop the pinger
+        if: always()
+        run: |
+          [ -f pinger.pid ] && kill "$(cat pinger.pid)" 2>/dev/null || true
+          echo "--- last 40 lines of the pinger log ---"
+          tail -40 pinger.log || true
 
       - name: Write job summary
         if: always()
@@ -85,6 +161,14 @@ jobs:
           {
             echo "## Solana Bidirectional (ad hoc)"
             echo
-            echo "- Mode: \`${SIG_BIDIRECTIONAL_E2E_MODE}\`"
-            echo "- Network: \`${SIG_BIDIRECTIONAL_E2E_ENV}\`"
+            echo "- Network: \`${{ inputs.env || 'testnet' }}\`"
+            echo "- Mode: \`${{ inputs.mode || 'eth_self_transfer' }}\`"
+            echo "- Jobs: \`${{ inputs.jobs || '50' }}\` across \`${{ inputs.paths || '10' }}\` addresses"
+            echo
+            if [ -f loadtest.log ]; then
+              echo '```'
+              # The tail carries the counts, failure reasons and latency table.
+              tail -32 loadtest.log
+              echo '```'
+            fi
           } >> "${GITHUB_STEP_SUMMARY}"

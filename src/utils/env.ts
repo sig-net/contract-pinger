@@ -46,11 +46,12 @@ const RESPOND_TIMEOUT_INCLUSION_MS = 300_000;
 const schema = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(3001),
   NODE_ENV: z.string().default('development'),
-  // Required: every route but the health check is behind it, so a process
-  // without one serves nothing and should say so at startup.
-  API_SECRET: z.string({
-    error: 'is required — every route but the health check is behind it',
-  }),
+  // Optional here, asserted by the server. Every route but the health check is
+  // behind it, but the scripts import this same config and neither serves
+  // HTTP: `pnpm fund` reads it only for the optional cross-check against a
+  // running service. Requiring it schema-wide made a funding run fail for
+  // want of a secret it had no use for.
+  API_SECRET: z.string().optional(),
 
   SIG_ETH_RPC_URL_SEPOLIA: z.string().url().optional(),
   SIG_ETH_RPC_URL_MAINNET: z.string().url().optional(),
