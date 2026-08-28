@@ -60,11 +60,11 @@ leg waits for Ethereum finality. Run it on its own:
 pnpm test:e2e
 ```
 
-The `Solana Bidirectional (ad hoc)` workflow runs the same thing from CI on
-demand,
-which exercises a branch without local setup. It needs a funded derived address
-for the CI environment's own `SIG_SOL_SK`, since the addresses follow from
-whichever key signs.
+The `Solana Bidirectional (ad hoc)` workflow drives the load test against the
+deployed pinger on request, defaulting to 50 jobs. It measures the service that
+is actually serving rather than a copy started inside the job, so it needs only
+that service's API secret — the pinger holds its own keys, and the jobs run on
+its funded addresses.
 
 `SIG_BIDIRECTIONAL_E2E_ENV` selects the network, and the credentials it needs
 follow from that — `SIG_SOL_RPC_URL_DEV` and `SIG_ETH_RPC_URL_SEPOLIA` for
