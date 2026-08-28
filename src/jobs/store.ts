@@ -1,0 +1,217 @@
+import { randomUUID } from 'crypto';
+import type { Hex } from 'viem';
+import type { TxMode } from '../utils/bidirectionalTx';
+
+export type JobState =
+  | 'pending'
+  | 'sign_sent'
+  | 'awaiting_signature'
+  | 'verified'
+  | 'broadcast'
+  | 'confirmed'
+  | 'responded'
+  | 'failed';
+
+/**
+ * A signature timeout and a respond timeout are different diagnoses — the MPC
+ * stopped signing, versus the MPC stopped reading results back — so they never
+ * collapse into one bucket.
+ */
+export type FailureReason =
+  // Three distinct operational causes, deliberately not merged. Every address
+  // is leased means the arrival rate outran the pool; every address is below
+  // the minimum means the wallets need topping up; and the preflight case is
+  // narrower still — the leased address cleared the minimum but cannot cover
+  // this transaction's gas at the current price.
+  | 'all_workers_busy'
+  | 'all_workers_underfunded'
+  | 'preflight_underfunded'
+  | 'signature_timeout'
+  | 'derivation_mismatch'
+  | 'broadcast_failed'
+  | 'confirmation_timeout'
+  | 'transaction_reverted'
+  | 'respond_timeout'
+  | 'respond_mismatch'
+  // Abandoned at a phase boundary because the process was shutting down.
+  | 'shutdown'
+  | 'internal_error';
+
+export interface JobTimings {
+  acceptedAt: number;
+  leaseAcquiredAt?: number;
+  signSentAt?: number;
+  signatureAt?: number;
+  broadcastAt?: number;
+  confirmedAt?: number;
+  respondedAt?: number;
+  finishedAt?: number;
+}
+
+export interface JobRecord {
+  id: string;
+  environment: string;
+  mode: TxMode;
+  state: JobState;
+  path?: string;
+  derivedAddress?: Hex;
+  requestId?: string;
+  solanaTx?: string;
+  ethTxHash?: Hex;
+  nonce?: number;
+  serializedOutput?: string;
+  failureReason?: FailureReason;
+  error?: string;
+  timings: JobTimings;
+}
+
+export type JobPatch = Partial<Omit<JobRecord, 'timings'>> & {
+  timings?: Partial<JobTimings>;
+};
+
+export interface JobView extends Omit<JobRecord, 'timings'> {
+  timings: JobTimings;
+  durations: Record<string, number>;
+}
+
+const durationsFor = (t: JobTimings): Record<string, number> => {
+  const span = (from?: number, to?: number) =>
+    from !== undefined && to !== undefined ? to - from : undefined;
+
+  const entries: [string, number | undefined][] = [
+    ['leaseWaitMs', span(t.acceptedAt, t.leaseAcquiredAt)],
+    ['signatureMs', span(t.signSentAt, t.signatureAt)],
+    ['confirmationMs', span(t.broadcastAt, t.confirmedAt)],
+    ['respondMs', span(t.confirmedAt, t.respondedAt)],
+    ['totalMs', span(t.acceptedAt, t.finishedAt)],
+  ];
+
+  return Object.fromEntries(
+    entries.filter((e): e is [string, number] => e[1] !== undefined)
+  );
+};
+
+export class JobStore {
+  private readonly jobs = new Map<string, JobRecord>();
+
+  /**
+   * @param maxActiveJobs jobs holding an address and doing chain work
+   * @param maxJobs   jobs awaiting the MPC's respond after confirmation
+   * @param retained  finished jobs kept for inspection and aggregates. Without
+   *                  a bound the map grows for the life of the process, and
+   *                  `/stats` sorts across every job ever recorded, so both
+   *                  memory and that endpoint degrade steadily on a
+   *                  long-running instance.
+   */
+  constructor(
+    private readonly maxJobs: number,
+    private readonly retained = 1000,
+    private readonly maxActiveJobs = 20
+  ) {}
+
+  /** Drops the oldest finished jobs once more than `retained` have piled up. */
+  private prune(): void {
+    const finished = [...this.jobs.values()].filter(
+      j => j.state === 'responded' || j.state === 'failed'
+    );
+    if (finished.length <= this.retained) return;
+    finished
+      .sort((a, b) => (a.timings.finishedAt ?? 0) - (b.timings.finishedAt ?? 0))
+      .slice(0, finished.length - this.retained)
+      .forEach(j => this.jobs.delete(j.id));
+  }
+
+  /**
+   * Jobs holding an address and doing chain work.
+   *
+   * Counted apart from the finality wait because they are bounded by different
+   * things. Everything up to `confirmed` holds an address lease and a stream of
+   * RPC calls for about a minute; `confirmed` holds nothing but an event
+   * subscription, for half an hour. Lumping them lets the cheap ones — which
+   * vastly outnumber the others — crowd out the expensive ones, so a single cap
+   * of N means a sustainable rate of N over the respond budget rather than
+   * anything to do with how many addresses exist.
+   */
+  get activeCount(): number {
+    let active = 0;
+    for (const job of this.jobs.values()) {
+      if (
+        job.state !== 'responded' &&
+        job.state !== 'failed' &&
+        job.state !== 'confirmed'
+      ) {
+        active += 1;
+      }
+    }
+    return active;
+  }
+
+  /** Jobs whose transaction is buried and which only await the MPC's respond. */
+  get awaitingRespondCount(): number {
+    let waiting = 0;
+    for (const job of this.jobs.values()) {
+      if (job.state === 'confirmed') waiting += 1;
+    }
+    return waiting;
+  }
+
+  get liveCount(): number {
+    return this.activeCount + this.awaitingRespondCount;
+  }
+
+  /**
+   * Which ceiling, if either, is reached. The distinction is the point: an
+   * active rejection says add addresses or slow arrivals, a respond rejection
+   * says the RPC's subscription ceiling is the limit and a shared dispatcher
+   * is what would raise it.
+   */
+  atCapacity(): 'active' | 'awaiting_respond' | null {
+    if (this.activeCount >= this.maxActiveJobs) return 'active';
+    if (this.awaitingRespondCount >= this.maxJobs) return 'awaiting_respond';
+    return null;
+  }
+
+  create(environment: string, mode: TxMode): JobRecord {
+    const job: JobRecord = {
+      id: randomUUID(),
+      environment,
+      mode,
+      state: 'pending',
+      timings: { acceptedAt: Date.now() },
+    };
+    this.jobs.set(job.id, job);
+    this.prune();
+    return job;
+  }
+
+  view(id: string): JobView | undefined {
+    const job = this.jobs.get(id);
+    if (!job) return undefined;
+    return { ...job, durations: durationsFor(job.timings) };
+  }
+
+  all(): readonly JobRecord[] {
+    return [...this.jobs.values()];
+  }
+
+  update(id: string, patch: JobPatch): void {
+    const job = this.jobs.get(id);
+    if (!job) return;
+    const { timings, ...rest } = patch;
+    Object.assign(job, rest);
+    if (timings) job.timings = { ...job.timings, ...timings };
+    // Also pruned here, not only on create: a batch that finishes after the
+    // last job was submitted would otherwise hold every record until the next
+    // request arrived, leaving /stats reporting well outside its window.
+    if (job.state === 'responded' || job.state === 'failed') this.prune();
+  }
+
+  fail(id: string, reason: FailureReason, error: unknown): void {
+    this.update(id, {
+      state: 'failed',
+      failureReason: reason,
+      error: error instanceof Error ? error.message : String(error),
+      timings: { finishedAt: Date.now() },
+    });
+  }
+}

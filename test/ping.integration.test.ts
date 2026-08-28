@@ -141,6 +141,10 @@ describe('/ping input parameters', () => {
     });
   });
 
+  // `check: true` waits for signatureRespondedEvent. `sign()` retries at
+  // 5s intervals up to six times and waitForEvent defaults to a 60s timeout,
+  // so this can legitimately take a minute — the suite-wide 15s only passed
+  // when the MPC happened to be fast.
   it('positive: Solana, dev, with check', async () => {
     const res = await request(app)
       .post('/ping')
@@ -149,7 +153,7 @@ describe('/ping input parameters', () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('signature');
-  });
+  }, 90_000);
 
   it.skip('positive: Solana, testnet, with check', async () => {
     const res = await request(app)

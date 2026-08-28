@@ -26,9 +26,15 @@ export const getCustomTransactionArgs = async ({
 }) => {
   const { maxFeePerGas, maxPriorityFeePerGas } =
     await publicClient.estimateFeesPerGas();
+  // `pending`, not `latest`: `latest` counts only mined transactions, so
+  // concurrent requests on one key all read the same nonce and every
+  // transaction after the first is rejected as an underpriced replacement.
+  // Five keys are rotated, but nothing stops five concurrent requests landing
+  // on one — and the deployed pinger signs from these same accounts, so its
+  // in-flight transactions occupy nonces this would otherwise reuse.
   const nonce = await publicClient.getTransactionCount({
     address: walletClient.account!.address,
-    blockTag: 'latest',
+    blockTag: 'pending',
   });
   return {
     maxFeePerGas: (maxFeePerGas * 12n) / 10n,

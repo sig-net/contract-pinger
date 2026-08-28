@@ -7,8 +7,12 @@
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
     "build": "tsc",
-    "test": "vitest run",
-    "format": "prettier --write ."
+    "test": "vitest run --exclude \"**/*.e2e.test.ts\"",
+    "format": "prettier --write .",
+    "test:e2e": "vitest run test/bidirectional.e2e.test.ts",
+    "loadtest": "tsx scripts/loadtest.ts",
+    "fund": "tsx scripts/fund-workers.ts",
+    "typecheck": "tsc -p tsconfig.check.json"
   },
   "keywords": [],
   "author": "",
@@ -21,7 +25,8 @@
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "signet.js": "0.4.0",
-    "viem": "^2.47.6"
+    "viem": "^2.47.6",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",

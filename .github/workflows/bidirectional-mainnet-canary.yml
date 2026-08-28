@@ -1,0 +1,81 @@
+name: Bidirectional Mainnet Canary
+
+# One round trip a day against mainnet. This is a liveness check, not a load
+# test: every job broadcasts a real Ethereum transaction and spends real ETH,
+# so volume here buys nothing testnet cannot already tell you. The service
+# holds mainnet to one derived address and one job a minute regardless of
+# configuration, so this cannot be turned into a load run by changing a
+# variable.
+on:
+  schedule:
+    - cron: '35 5 * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Transaction mode
+        required: false
+        default: eth_self_transfer
+        type: choice
+        options:
+          - eth_self_transfer
+          - erc20_zero_transfer
+
+permissions:
+  contents: read
+
+# One address, so one run at a time. Queued rather than cancelled: cancelling
+# mid-flight would abandon a job that has already paid for its transaction.
+concurrency:
+  group: bidirectional-mainnet-canary
+  cancel-in-progress: false
+
+jobs:
+  round-trip:
+    runs-on: ubuntu-latest
+    # The respond leg waits for Ethereum finality, so the job outlives its
+    # arrival by tens of minutes.
+    timeout-minutes: 70
+    environment: Pinger Test ENV
+    env:
+      API_SECRET: canary-secret
+      SIG_ETH_RPC_URL_MAINNET: ${{ secrets.SIG_ETH_RPC_URL_MAINNET }}
+      SIG_SOL_RPC_URL_MAINNET: ${{ secrets.SIG_SOL_RPC_URL_MAINNET }}
+      SIG_SOL_SK: ${{ secrets.SIG_SOL_SK_MAINNET }}
+      SIG_BIDIRECTIONAL_E2E_ENV: mainnet
+      SIG_BIDIRECTIONAL_E2E_MODE: ${{ inputs.mode || 'eth_self_transfer' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.14.0'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Validate required secrets
+        run: |
+          set -euo pipefail
+          for name in SIG_ETH_RPC_URL_MAINNET SIG_SOL_RPC_URL_MAINNET SIG_SOL_SK; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Missing required secret: ${name}"
+              exit 1
+            fi
+          done
+
+      # The derived address is MPC-controlled: ETH sent there can only leave as
+      # gas for these round trips. Funded by hand rather than by a sweep, so
+      # nothing automated moves real ETH on a schedule.
+      - name: Run the mainnet round trip
+        run: pnpm test:e2e
+
+      - name: Write job summary
+        if: always()
+        run: |
+          {
+            echo "## Bidirectional Mainnet Canary"
+            echo
+            echo "- Mode: \`${SIG_BIDIRECTIONAL_E2E_MODE}\`"
+            echo "- One round trip; the pool is fixed at a single address."
+          } >> "${GITHUB_STEP_SUMMARY}"

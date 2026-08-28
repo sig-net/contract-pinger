@@ -1,0 +1,108 @@
+name: Fund Bidirectional Workers
+
+# Funding is treasury automation, not request handling, so it lives here rather
+# than inside the service. The pinger reports balances and refuses to lease an
+# address that is short; nothing in the request path holds spending authority.
+#
+# Every fifteen minutes rather than hourly: at 10 jobs/min each address burns
+# roughly 0.0014 ETH/hour, and GitHub's scheduler runs late often enough that
+# the balance band has to absorb several missed runs on its own. See the runway
+# figure the script prints at the end of each run.
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+    inputs:
+      env:
+        description: Networks to fund (comma-separated)
+        required: false
+        default: dev,testnet
+        type: string
+      dry_run:
+        description: Report what would be sent, send nothing
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+# Never overlapping: two runs would read the same balances and each send a full
+# top-up from the same wallet, racing nonces and overfunding. Queued rather than
+# cancelled, so a manual run cannot silently drop a scheduled one mid-transfer.
+#
+# Every network is funded by a single invocation rather than a job per network.
+# The spend caps govern a run, and a process per network would enforce each cap
+# against its own total — letting combined spend reach a multiple of the figure
+# that was set.
+concurrency:
+  group: fund-bidirectional-workers
+  cancel-in-progress: false
+
+jobs:
+  fund:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: Pinger Test ENV
+    env:
+      SIG_ETH_RPC_URL_SEPOLIA: ${{ secrets.SIG_ETH_RPC_URL_SEPOLIA }}
+      SIG_SOL_RPC_URL_DEV: ${{ secrets.SIG_SOL_RPC_URL_DEV }}
+      SIG_BIDIRECTIONAL_FUNDING_SK: ${{ secrets.SIG_BIDIRECTIONAL_FUNDING_SK }}
+      # The worker addresses follow from this key's *public* half, so the sweep
+      # derives the requester rather than being told it. Passed here as the
+      # same secret the service signs with, so the two cannot drift.
+      SIG_SOL_SK: ${{ secrets.SIG_SOL_SK }}
+      # Optional cross-check. Set it only when this runs against a service
+      # holding a different key; a mismatch then fails the run rather than
+      # funding addresses nothing spends from.
+      SIG_BIDIRECTIONAL_REQUESTER_PUBKEY: ${{ vars.SIG_BIDIRECTIONAL_REQUESTER_PUBKEY }}
+      SIG_BIDIRECTIONAL_PATHS: ${{ vars.SIG_BIDIRECTIONAL_PATHS || '10' }}
+      SIG_BIDIRECTIONAL_PATH_PREFIX: ${{ vars.SIG_BIDIRECTIONAL_PATH_PREFIX || 'load' }}
+      # Must match the deployed service. Unset there and unset here both mean
+      # "pair the root key to the program address"; set on one side only
+      # derives a different address set entirely.
+      SIG_SOL_ROOT_PUBLIC_KEY: ${{ vars.SIG_SOL_ROOT_PUBLIC_KEY }}
+      # Thresholds are variables, not constants: the right band depends on the
+      # measured gas of the enabled transaction mode and on how long a pool must
+      # survive without a sweep.
+      #
+      #   runs of headroom = (topup - min) / gas per run
+      #
+      # The defaults give ~64 minutes at 10 jobs/min, or four missed sweeps,
+      # against a measured 0.0000234 ETH per eth_self_transfer round trip.
+      SIG_BIDIRECTIONAL_FUND_MIN_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_MIN_ETH || '0.002' }}
+      SIG_BIDIRECTIONAL_FUND_TOPUP_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_TOPUP_ETH || '0.0035' }}
+      SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH || '0.02' }}
+      SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH || '0.1' }}
+      SIG_BIDIRECTIONAL_FUND_RESERVE_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_RESERVE_ETH || '0.02' }}
+      # Cross-check the derived addresses against the deployed service before
+      # spending. Five values must agree across the two — the path count and
+      # prefix, the root key, the requester key, and the balance minimum — and
+      # drift is otherwise silent: ETH goes to addresses no job uses while the
+      # real pool starves. Unreachable is not a failure; disagreeing is.
+      SIG_BIDIRECTIONAL_SERVICE_URL: ${{ vars.SIG_BIDIRECTIONAL_SERVICE_URL }}
+      API_SECRET: ${{ secrets.LT_PINGER_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.14.0'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Validate configuration
+        run: |
+          set -euo pipefail
+          for name in SIG_ETH_RPC_URL_SEPOLIA SIG_SOL_RPC_URL_DEV \
+                      SIG_BIDIRECTIONAL_FUNDING_SK SIG_SOL_SK; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Missing required configuration: ${name}"
+              exit 1
+            fi
+          done
+
+      - name: Fund workers
+        run: pnpm fund --env '${{ inputs.env || 'dev,testnet' }}' ${{ inputs.dry_run && '--dry-run' || '' }}

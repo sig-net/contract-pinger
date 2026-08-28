@@ -1,0 +1,90 @@
+name: Solana Bidirectional (ad hoc)
+
+# On demand only. Runs the full round trip from CI against the code on a
+# branch, so a change can be exercised without local setup.
+#
+# Deliberately unscheduled: the derived addresses are a function of this
+# environment's SIG_SOL_SK, so a schedule would need its own funded addresses
+# maintained solely to keep this green. Scheduled monitoring belongs against
+# the deployed service, where it can report somewhere.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Transaction mode
+        required: false
+        default: eth_self_transfer
+        type: choice
+        options:
+          - eth_self_transfer
+          - erc20_zero_transfer
+      env:
+        description: MPC network
+        required: false
+        default: dev
+        type: choice
+        options:
+          - dev
+          - testnet
+
+permissions:
+  contents: read
+
+# The address pool is shared state: two runs would contend for the same
+# derived addresses and their nonces.
+concurrency:
+  group: sol-bidirectional-adhoc
+  cancel-in-progress: false
+
+jobs:
+  round-trip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    environment: Pinger Test ENV
+    env:
+      API_SECRET: monitor-secret
+      SIG_ETH_RPC_URL_SEPOLIA: ${{ secrets.SIG_ETH_RPC_URL_SEPOLIA }}
+      SIG_EVM_SK_1: ${{ secrets.SIG_EVM_SK_1 }}
+      SIG_EVM_SK_2: ${{ secrets.SIG_EVM_SK_2 }}
+      SIG_EVM_SK_3: ${{ secrets.SIG_EVM_SK_3 }}
+      SIG_EVM_SK_4: ${{ secrets.SIG_EVM_SK_4 }}
+      SIG_EVM_SK_5: ${{ secrets.SIG_EVM_SK_5 }}
+      SIG_SOL_RPC_URL_DEV: ${{ secrets.SIG_SOL_RPC_URL_DEV }}
+      SIG_SOL_SK: ${{ secrets.SIG_SOL_SK }}
+      # One address is enough for a monitor; the pool matters under load.
+      SIG_BIDIRECTIONAL_PATHS: '1'
+      SIG_BIDIRECTIONAL_E2E_ENV: ${{ inputs.env || 'dev' }}
+      SIG_BIDIRECTIONAL_E2E_MODE: ${{ inputs.mode || 'eth_self_transfer' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.14.0'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Validate required secrets
+        run: |
+          set -euo pipefail
+          for name in SIG_ETH_RPC_URL_SEPOLIA SIG_SOL_RPC_URL_DEV SIG_SOL_SK; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Missing required secret: ${name}"
+              exit 1
+            fi
+          done
+
+      - name: Run bidirectional round trip
+        run: pnpm test:e2e
+
+      - name: Write job summary
+        if: always()
+        run: |
+          {
+            echo "## Solana Bidirectional (ad hoc)"
+            echo
+            echo "- Mode: \`${SIG_BIDIRECTIONAL_E2E_MODE}\`"
+            echo "- Network: \`${SIG_BIDIRECTIONAL_E2E_ENV}\`"
+          } >> "${GITHUB_STEP_SUMMARY}"
