@@ -194,10 +194,7 @@ against what the service reports, refusing to spend when they disagree. An
 unreachable service is skipped rather than treated as a disagreement.
 
 The same script runs on a schedule as the `Fund Bidirectional Workers`
-workflow. `Claim Sepolia Faucet` tops up the wallet that
-sweep spends from, daily, and skips the claim when the wallet is already above
-its threshold — the faucet allows about one claim a day, so it is not spent on
-a wallet that does not need it. It derives the addresses itself from public inputs rather than asking
+workflow. It derives the addresses itself from public inputs rather than asking
 the service for them, so it neither trusts the service to name its own payees
 nor needs it to be running. It reads `SIG_BIDIRECTIONAL_FUNDING_SK` from the
 environment — never an argument, which would put a key in `ps` output — waits
