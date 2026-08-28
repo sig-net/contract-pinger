@@ -15,6 +15,8 @@
  */
 import 'dotenv/config';
 
+import { env } from '../src/utils/env';
+
 interface Options {
   jobs: number;
   env: string;
@@ -31,15 +33,12 @@ const parseArgs = (argv: string[]): Options => {
   };
   return {
     jobs: Number(get('jobs', '10')),
-    env: get('env', process.env.SIG_BIDIRECTIONAL_E2E_ENV || 'testnet'),
-    mode: get(
-      'mode',
-      process.env.SIG_BIDIRECTIONAL_TX_MODE || 'eth_self_transfer'
-    ),
-    url: get('url', `http://localhost:${process.env.PORT || '3001'}`),
+    env: get('env', env.bidirectional.e2eEnv),
+    mode: get('mode', env.bidirectional.txMode),
+    url: get('url', `http://localhost:${env.port}`),
     // Environment only. A secret passed as an argument is visible in `ps`
     // output and lands in shell history.
-    secret: process.env.API_SECRET || '',
+    secret: env.apiSecret,
     pollMs: Number(get('poll', '15000')),
   };
 };

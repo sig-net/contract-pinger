@@ -118,6 +118,37 @@ const schema = z.object({
   // Read-only in the service: it reports balances and refuses to lease an
   // address below this, but never spends. Topping up is scripts/fund-workers.
   SIG_BIDIRECTIONAL_MIN_BALANCE_WEI: wei('2000000000000000'),
+
+  // Read only by scripts/fund-workers, but validated here so the sweep and the
+  // service cannot hold different ideas of the same setting — which is how an
+  // address ends up too poor for the service to lease and too rich for the
+  // sweep to notice.
+  SIG_BIDIRECTIONAL_FUND_MIN_ETH: z
+    .string()
+    .default('0.002')
+    .refine(v => /^\d+(\.\d+)?$/.test(v), 'must be a decimal number of ETH'),
+  SIG_BIDIRECTIONAL_FUND_TOPUP_ETH: z
+    .string()
+    .default('0.0035')
+    .refine(v => /^\d+(\.\d+)?$/.test(v), 'must be a decimal number of ETH'),
+  SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH: z
+    .string()
+    .default('0.02')
+    .refine(v => /^\d+(\.\d+)?$/.test(v), 'must be a decimal number of ETH'),
+  SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH: z
+    .string()
+    .default('0.1')
+    .refine(v => /^\d+(\.\d+)?$/.test(v), 'must be a decimal number of ETH'),
+  SIG_BIDIRECTIONAL_FUND_RESERVE_ETH: z
+    .string()
+    .default('0.02')
+    .refine(v => /^\d+(\.\d+)?$/.test(v), 'must be a decimal number of ETH'),
+  SIG_BIDIRECTIONAL_FUNDING_SK: z.string().optional(),
+  SIG_BIDIRECTIONAL_REQUESTER_PUBKEY: z.string().optional(),
+  SIG_BIDIRECTIONAL_SERVICE_URL: z.string().url().optional(),
+  SIG_BIDIRECTIONAL_E2E_ENV: z
+    .enum(['dev', 'testnet', 'mainnet'])
+    .default('testnet'),
 });
 
 const parse = () => {
@@ -184,6 +215,19 @@ export const env = {
     ethConfirmTimeoutMs: parsed.SIG_BIDIRECTIONAL_ETH_CONFIRM_TIMEOUT_MS,
     confirmations: parsed.SIG_BIDIRECTIONAL_CONFIRMATIONS,
     minBalanceWei: parsed.SIG_BIDIRECTIONAL_MIN_BALANCE_WEI,
+    e2eEnv: parsed.SIG_BIDIRECTIONAL_E2E_ENV,
+  },
+
+  /** Read by scripts/fund-workers, never by the service. */
+  funding: {
+    key: parsed.SIG_BIDIRECTIONAL_FUNDING_SK,
+    requesterPubkey: parsed.SIG_BIDIRECTIONAL_REQUESTER_PUBKEY,
+    serviceUrl: parsed.SIG_BIDIRECTIONAL_SERVICE_URL,
+    minEth: parsed.SIG_BIDIRECTIONAL_FUND_MIN_ETH,
+    topUpEth: parsed.SIG_BIDIRECTIONAL_FUND_TOPUP_ETH,
+    maxPerAddressEth: parsed.SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH,
+    maxPerRunEth: parsed.SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH,
+    reserveEth: parsed.SIG_BIDIRECTIONAL_FUND_RESERVE_ETH,
   },
 } as const;
 

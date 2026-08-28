@@ -153,7 +153,7 @@ const main = async () => {
     }
   }
 
-  const fundingKey = process.env.SIG_BIDIRECTIONAL_FUNDING_SK;
+  const fundingKey = env.funding.key;
   if (!fundingKey) fail('SIG_BIDIRECTIONAL_FUNDING_SK is not set');
 
   // Every network in one run must settle on the same Ethereum: a single wallet
@@ -186,7 +186,7 @@ const main = async () => {
   // Optional, and only ever a check. Set it when this runs against a service
   // holding a different key — a mismatch then fails the run instead of
   // silently funding the wrong addresses.
-  const expectedRequester = process.env.SIG_BIDIRECTIONAL_REQUESTER_PUBKEY;
+  const expectedRequester = env.funding.requesterPubkey;
   if (
     expectedRequester &&
     derivedRequester &&
@@ -223,25 +223,16 @@ const main = async () => {
   // default gives ~64 minutes, or four missed fifteen-minute sweeps. Re-measure
   // when the transaction mode or Sepolia gas moves; these are variables, not
   // constants, precisely because that number is not fixed.
-  const expectedWorkers = Number(
-    arg('paths', process.env.SIG_BIDIRECTIONAL_PATHS ?? '10')
-  );
-  const pathPrefix = process.env.SIG_BIDIRECTIONAL_PATH_PREFIX ?? 'load';
-  const minBalance = parseEther(
-    arg('min', process.env.SIG_BIDIRECTIONAL_FUND_MIN_ETH ?? '0.002')!
-  );
-  const topUpTo = parseEther(
-    arg('topup', process.env.SIG_BIDIRECTIONAL_FUND_TOPUP_ETH ?? '0.0035')!
-  );
-  const maxPerAddress = parseEther(
-    process.env.SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH ?? '0.02'
-  );
-  const maxPerRun = parseEther(
-    process.env.SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH ?? '0.1'
-  );
-  const reserve = parseEther(
-    process.env.SIG_BIDIRECTIONAL_FUND_RESERVE_ETH ?? '0.02'
-  );
+  // Defaults come from the shared schema, so a value set for the service is
+  // the same value here — two readings would be two chances to disagree, and
+  // the addresses derived from them would differ.
+  const expectedWorkers = Number(arg('paths', String(env.bidirectional.paths)));
+  const pathPrefix = env.bidirectional.pathPrefix;
+  const minBalance = parseEther(arg('min', env.funding.minEth)!);
+  const topUpTo = parseEther(arg('topup', env.funding.topUpEth)!);
+  const maxPerAddress = parseEther(env.funding.maxPerAddressEth);
+  const maxPerRun = parseEther(env.funding.maxPerRunEth);
+  const reserve = parseEther(env.funding.reserveEth);
   const dryRun = flag('dry-run');
 
   // The service refuses to lease below SIG_BIDIRECTIONAL_MIN_BALANCE_WEI. If
@@ -271,7 +262,7 @@ const main = async () => {
   }
 
   // --- derive, locally ----------------------------------------------------
-  const solanaRpc = process.env.SIG_SOL_RPC_URL_DEV;
+  const solanaRpc = env.solRpcUrlDevnet;
   if (!solanaRpc) fail('SIG_SOL_RPC_URL_DEV is not set');
 
   const provider = new anchor.AnchorProvider(
@@ -316,15 +307,15 @@ const main = async () => {
   }
 
   // Reachable and disagreeing stops the run; unreachable does not.
-  const serviceUrl = arg('url', process.env.SIG_BIDIRECTIONAL_SERVICE_URL);
-  if (serviceUrl && process.env.API_SECRET) {
+  const serviceUrl = arg('url', env.funding.serviceUrl);
+  if (serviceUrl && env.apiSecret) {
     console.log('\nchecking against the service:');
-    for (const env of envs) {
+    for (const network of envs) {
       await crossCheck({
         url: serviceUrl,
-        secret: process.env.API_SECRET,
-        env,
-        derived: workers.filter(w => w.env === env),
+        secret: env.apiSecret,
+        env: network,
+        derived: workers.filter(w => w.env === network),
       });
     }
   }
@@ -335,7 +326,7 @@ const main = async () => {
 
   console.log(`requester   : ${requester}`);
   console.log(
-    `root key    : ${process.env.SIG_SOL_ROOT_PUBLIC_KEY ? 'SIG_SOL_ROOT_PUBLIC_KEY override' : 'paired to the program address'}`
+    `root key    : ${env.solRootPublicKey ? 'SIG_SOL_ROOT_PUBLIC_KEY override' : 'paired to the program address'}`
   );
   console.log(`funding from: ${account.address}`);
   console.log(
