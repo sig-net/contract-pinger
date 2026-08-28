@@ -148,6 +148,12 @@ export const buildTransaction = async ({
   erc20Address: Hex;
 }): Promise<BuiltTransaction> => {
   const [nonce, fees] = await Promise.all([
+    // `latest` is right here, unlike the /ping path which needs `pending`: the
+    // address lease gives one job exclusive use, and an address whose previous
+    // transaction was never seen confirmed is withheld rather than reissued.
+    // Nothing of ours is in flight from it, so `latest` is the next nonce —
+    // and if something unexpected were pending, this replaces it rather than
+    // queueing behind a transaction that may never mine.
     client.getTransactionCount({ address: from, blockTag: 'latest' }),
     client.estimateFeesPerGas(),
   ]);
