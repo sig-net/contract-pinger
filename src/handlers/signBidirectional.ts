@@ -17,7 +17,7 @@ import {
 } from '../utils/derivation';
 import { buildSignBidirectionalInstruction } from '../utils/signBidirectionalIx';
 import { getSharedSolana, type SolanaEnvironment } from '../utils/initSolana';
-import { useEnv } from '../utils/useEnv';
+import { env } from '../utils/env';
 import {
   buildPaths,
   NoWorkerAvailableError,
@@ -67,7 +67,7 @@ export class BidirectionalService {
     readonly environment: SolanaEnvironment,
     rpcUrl: string
   ) {
-    const { bidirectional } = useEnv();
+    const { bidirectional } = env;
     // Mainnet settles on real Ethereum, so its limits are fixed here rather
     // than read from configuration: one address, one job a minute. It exists
     // to answer whether signing and responding still work, and a setting meant
@@ -123,7 +123,7 @@ export class BidirectionalService {
   }
 
   async refreshBalances(): Promise<void> {
-    const { minBalanceWei } = useEnv().bidirectional;
+    const { minBalanceWei } = env.bidirectional;
     for (const worker of this.pool.all()) {
       if (worker.address === ('0x' as Hex)) continue;
       const balance = await this.client.getBalance({ address: worker.address });
@@ -142,7 +142,7 @@ export class BidirectionalService {
    * workflow had already refilled. Costs nothing while none are short.
    */
   private async refreshUnderfunded(): Promise<void> {
-    const { minBalanceWei } = useEnv().bidirectional;
+    const { minBalanceWei } = env.bidirectional;
     for (const worker of this.pool.all()) {
       if (!worker.underfunded || worker.address === ('0x' as Hex)) continue;
       const balance = await this.client.getBalance({ address: worker.address });
@@ -204,7 +204,7 @@ export class BidirectionalService {
   }
 
   private async run(job: JobRecord): Promise<void> {
-    const { bidirectional } = useEnv();
+    const { bidirectional } = env;
     const { chainSigContract, provider, keypair } = this.solana();
     let worker: Worker | undefined;
     let leaseReleased = false;

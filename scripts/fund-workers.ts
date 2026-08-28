@@ -37,6 +37,7 @@ import {
   ETHEREUM_TARGETS,
 } from '../src/utils/bidirectionalTx';
 import { buildPaths } from '../src/utils/workerPool';
+import { env } from '../src/utils/env';
 
 const ENVIRONMENTS = {
   dev: 'TESTNET_DEV',
@@ -222,9 +223,10 @@ const main = async () => {
   // The service refuses to lease below SIG_BIDIRECTIONAL_MIN_BALANCE_WEI. If
   // this sweep only tops up below some lower figure, an address between the two
   // is stranded — unusable and never refilled — and the pool quietly shrinks.
-  const serviceMin = BigInt(
-    process.env.SIG_BIDIRECTIONAL_MIN_BALANCE_WEI ?? '2000000000000000'
-  );
+  // Read through the service's own schema rather than re-parsed here: two
+  // readings of the same variable are two chances to disagree about its
+  // default, and this comparison exists precisely to catch a disagreement.
+  const serviceMin = env.bidirectional.minBalanceWei;
   if (minBalance < serviceMin) {
     fail(
       `SIG_BIDIRECTIONAL_FUND_MIN_ETH (${formatEther(minBalance)}) is below the service's ` +

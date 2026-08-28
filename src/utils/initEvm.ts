@@ -1,7 +1,7 @@
 import { createPublicClient, createWalletClient, http } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { sepolia, mainnet } from 'viem/chains';
-import { useEnv } from './useEnv';
+import { env } from './env';
 import { contracts } from 'signet.js';
 
 export const initEthereum = ({
@@ -11,7 +11,7 @@ export const initEthereum = ({
   contractAddress: string;
   environment: 'dev' | 'testnet' | 'mainnet';
 }) => {
-  const { ethRpcUrlSepolia, ethRpcUrlMainnet, evmSk } = useEnv();
+  const { ethRpcUrlSepolia, ethRpcUrlMainnet, evmSk } = env;
   const config = {
     dev: {
       chain: sepolia,

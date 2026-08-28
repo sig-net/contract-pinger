@@ -15,7 +15,7 @@ import {
   TX_MODES,
   type BidirectionalEnvironment,
 } from './utils/bidirectionalTx';
-import { useEnv } from './utils/useEnv';
+import { env } from './utils/env';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 const API_SECRET = process.env.API_SECRET;
@@ -171,11 +171,11 @@ app.post(
   '/sign_bidirectional',
   async (req: express.Request, res: express.Response): Promise<void> => {
     try {
-      const { env, mode } = req.body ?? {};
+      const { env: network, mode } = req.body ?? {};
 
       // Mode is validated before the service is resolved so a bad mode always
       // reports itself, rather than being masked by a missing RPC URL.
-      const txMode = mode ?? useEnv().bidirectional.txMode;
+      const txMode = mode ?? env.bidirectional.txMode;
       if (!isTxMode(txMode)) {
         res
           .status(400)
@@ -183,7 +183,7 @@ app.post(
         return;
       }
 
-      const resolved = resolveBidirectionalService(env);
+      const resolved = resolveBidirectionalService(network);
       if ('error' in resolved) {
         res.status(400).json({
           error: resolved.error,
@@ -204,7 +204,7 @@ app.post(
         // Named rather than merged: an active rejection means the address pool
         // or chain throughput is the limit, and a respond rejection means the
         // subscription ceiling is. They call for different remedies.
-        const { bidirectional } = useEnv();
+        const { bidirectional } = env;
         const retryAfterMs = full === 'active' ? 15_000 : 60_000;
         res
           .status(429)
@@ -235,7 +235,7 @@ app.post(
           .set('Retry-After', String(Math.ceil(retryAfterMs / 1000)))
           .json({
             error: 'Rate limit exceeded',
-            limitPerMinute: useEnv().bidirectional.maxRequestsPerMinute,
+            limitPerMinute: env.bidirectional.maxRequestsPerMinute,
             retryAfterMs,
           });
         return;
@@ -244,7 +244,7 @@ app.post(
       const job = service.start(txMode);
       console.log('sign_bidirectional accepted:', {
         jobId: job.id,
-        env,
+        env: network,
         mode: txMode,
       });
       res.status(202).json({ jobId: job.id, state: job.state, mode: txMode });
