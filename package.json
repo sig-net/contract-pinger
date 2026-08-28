@@ -12,7 +12,8 @@
     "test:e2e": "vitest run test/bidirectional.e2e.test.ts",
     "loadtest": "tsx scripts/loadtest.ts",
     "fund": "tsx scripts/fund-workers.ts",
-    "typecheck": "tsc -p tsconfig.check.json"
+    "typecheck": "tsc -p tsconfig.check.json",
+    "claim": "tsx scripts/claim-faucet.ts"
   },
   "keywords": [],
   "author": "",

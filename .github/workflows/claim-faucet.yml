@@ -1,0 +1,81 @@
+name: Claim Sepolia Faucet
+
+# Tops up the wallet that Fund Bidirectional Workers spends from. That sweep is
+# the second half of the supply chain; this is the first.
+#
+# Separate from the sweep because the two run at different rates: the faucet
+# allows roughly one claim a day, the sweep runs every fifteen minutes.
+# Combining them would mean either sweeping daily or asking the faucet ninety
+# times for every claim it will grant.
+#
+# The claim is skipped when the wallet is already above its threshold, so a
+# day's quota is not spent on a wallet that does not need it.
+on:
+  schedule:
+    # An hour after the chainstack-sepolia-faucet CronJob in sig-kustomize, so
+    # the two are not asking the same API in the same minute.
+    - cron: '30 15 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Report the balance and decision, claim nothing
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: claim-faucet
+  cancel-in-progress: false
+
+jobs:
+  claim:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: Pinger Test ENV
+    env:
+      CHAINSTACK_API_KEY: ${{ secrets.CHAINSTACK_API_KEY }}
+      SIG_BIDIRECTIONAL_FUNDING_SK: ${{ secrets.SIG_BIDIRECTIONAL_FUNDING_SK }}
+      SIG_ETH_RPC_URL_SEPOLIA: ${{ secrets.SIG_ETH_RPC_URL_SEPOLIA }}
+      # Claim only below this. Sized above what a sweep costs so a run is not
+      # triggered by ordinary spending, and below what the wallet needs to keep
+      # sweeping for a few days.
+      SIG_BIDIRECTIONAL_CLAIM_SKIP_ABOVE_ETH: ${{ vars.SIG_BIDIRECTIONAL_CLAIM_SKIP_ABOVE_ETH || '0.1' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.14.0'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Validate required secrets
+        run: |
+          set -euo pipefail
+          for name in CHAINSTACK_API_KEY SIG_BIDIRECTIONAL_FUNDING_SK SIG_ETH_RPC_URL_SEPOLIA; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Missing required secret: ${name}"
+              exit 1
+            fi
+          done
+
+      - name: Claim
+        run: pnpm claim ${{ inputs.dry_run && '--dry-run' || '' }} | tee claim.log
+
+      - name: Write job summary
+        if: always()
+        run: |
+          {
+            echo "## Claim Sepolia Faucet"
+            echo
+            if [ -f claim.log ]; then
+              echo '```'
+              cat claim.log
+              echo '```'
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"
