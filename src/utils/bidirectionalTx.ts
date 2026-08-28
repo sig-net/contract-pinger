@@ -10,6 +10,7 @@ import {
 } from 'viem';
 import { mainnet, sepolia } from 'viem/chains';
 import { chainAdapters } from 'signet.js';
+import { env } from './env';
 import { keccak256 } from 'viem/utils';
 
 export const TX_MODES = ['eth_self_transfer', 'erc20_zero_transfer'] as const;
@@ -40,19 +41,19 @@ export const ETHEREUM_TARGETS = {
   dev: {
     chain: sepolia,
     chainId: 11155111,
-    rpcVar: 'SIG_ETH_RPC_URL_SEPOLIA',
+    rpcUrl: () => env.ethRpcUrlSepolia,
     erc20: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
   },
   testnet: {
     chain: sepolia,
     chainId: 11155111,
-    rpcVar: 'SIG_ETH_RPC_URL_SEPOLIA',
+    rpcUrl: () => env.ethRpcUrlSepolia,
     erc20: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
   },
   mainnet: {
     chain: mainnet,
     chainId: 1,
-    rpcVar: 'SIG_ETH_RPC_URL_MAINNET',
+    rpcUrl: () => env.ethRpcUrlMainnet,
     erc20: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
   },
 } as const satisfies Record<BidirectionalEnvironment, unknown>;

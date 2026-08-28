@@ -158,15 +158,19 @@ const main = async () => {
 
   // Every network in one run must settle on the same Ethereum: a single wallet
   // sends the transfers, and its nonce sequence belongs to one chain.
-  const targets = new Set(envs.map(e => ETHEREUM_TARGETS[e].rpcVar));
+  const targets = new Set(envs.map(e => ETHEREUM_TARGETS[e].chainId));
   if (targets.size > 1) {
     fail(
       `${envs.join(', ')} settle on different Ethereum networks. Fund them in separate runs.`
     );
   }
-  const rpcVar = ETHEREUM_TARGETS[envs[0]].rpcVar;
-  const rpcUrl = process.env[rpcVar];
-  if (!rpcUrl) fail(`${rpcVar} is not set`);
+  const rpcUrl = ETHEREUM_TARGETS[envs[0]].rpcUrl();
+  if (!rpcUrl) {
+    fail(
+      `No Ethereum RPC configured for ${envs[0]} (chain ${ETHEREUM_TARGETS[envs[0]].chainId})`
+    );
+    return;
+  }
 
   // Public by construction — the requester is SIG_SOL_SK's *public* key. It
   // must match the deployed service exactly: rotating that keypair moves every

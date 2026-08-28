@@ -17,14 +17,6 @@ import {
 } from './utils/bidirectionalTx';
 import { env } from './utils/env';
 
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
-const API_SECRET = process.env.API_SECRET;
-
-if (!API_SECRET) {
-  console.error('FATAL: API_SECRET environment variable is not set. Exiting.');
-  process.exit(1);
-}
-
 const app = express();
 
 app.use(express.json());
@@ -41,7 +33,7 @@ const validateSecret = (
 
   const requestSecret = req.headers['x-api-secret'] || req.body?.secret;
 
-  if (!requestSecret || requestSecret !== API_SECRET) {
+  if (!requestSecret || requestSecret !== env.apiSecret) {
     return res.status(401).json({
       error: 'Unauthorized',
       details: 'Invalid or missing API secret',
@@ -143,17 +135,16 @@ app.post(
 
 const bidirectionalEnvironments = ['dev', 'testnet', 'mainnet'] as const;
 
-const resolveBidirectionalService = (env: unknown) => {
+const resolveBidirectionalService = (network: unknown) => {
   if (
-    typeof env !== 'string' ||
-    !(bidirectionalEnvironments as readonly string[]).includes(env)
+    typeof network !== 'string' ||
+    !(bidirectionalEnvironments as readonly string[]).includes(network)
   ) {
     return { error: 'Invalid or missing environment parameter' as const };
   }
   // Each network settles on its own Ethereum, so the RPC follows the target
   // rather than being fixed to Sepolia.
-  const rpcUrl =
-    process.env[ETHEREUM_TARGETS[env as BidirectionalEnvironment].rpcVar];
+  const rpcUrl = ETHEREUM_TARGETS[network as BidirectionalEnvironment].rpcUrl();
   if (!rpcUrl) {
     return {
       error: 'Missing Ethereum RPC URL for selected environment' as const,
@@ -161,7 +152,7 @@ const resolveBidirectionalService = (env: unknown) => {
   }
   return {
     service: getBidirectionalService(
-      env as 'dev' | 'testnet' | 'mainnet',
+      network as 'dev' | 'testnet' | 'mainnet',
       rpcUrl
     ),
   };
@@ -325,9 +316,9 @@ app.post(
   async (req: express.Request, res: express.Response): Promise<void> => {
     try {
       const address = req.body.address as string;
-      const env = (req.body.env as string)?.toLowerCase();
+      const network = (req.body.env as string)?.toLowerCase();
 
-      console.log('Received eth_balance request:', { address, env });
+      console.log('Received eth_balance request:', { address, env: network });
 
       if (!address) {
         console.log('eth_balance error: Missing address parameter');
@@ -346,17 +337,17 @@ app.post(
       const { sepolia, mainnet } = await import('viem/chains');
       let ethRpcUrl = '';
       let chain;
-      if (env === 'mainnet') {
-        ethRpcUrl = process.env.SIG_ETH_RPC_URL_MAINNET || '';
+      if (network === 'mainnet') {
+        ethRpcUrl = env.ethRpcUrlMainnet;
         chain = mainnet;
       } else {
-        ethRpcUrl = process.env.SIG_ETH_RPC_URL_SEPOLIA || '';
+        ethRpcUrl = env.ethRpcUrlSepolia;
         chain = sepolia;
       }
       if (!ethRpcUrl) {
         console.log(
           'eth_balance error: Missing Ethereum RPC URL for environment:',
-          env
+          network
         );
         res
           .status(500)
@@ -400,8 +391,8 @@ app.use(
 let server: ReturnType<typeof app.listen> | undefined;
 
 if (require.main === module) {
-  server = app.listen(PORT, () => {
-    console.log(`Server running at http://localhost:${PORT}`);
+  server = app.listen(env.port, () => {
+    console.log(`Server running at http://localhost:${env.port}`);
     console.log(
       `Supported blockchains: ${blockchainHandlers.getSupportedChains().join(', ')}`
     );

@@ -44,8 +44,13 @@ const RESPOND_TIMEOUT_FINALITY_MS = 2_100_000;
 const RESPOND_TIMEOUT_INCLUSION_MS = 300_000;
 
 const schema = z.object({
-  PORT: z.string().default('3001'),
+  PORT: z.coerce.number().int().min(1).max(65535).default(3001),
   NODE_ENV: z.string().default('development'),
+  // Required: every route but the health check is behind it, so a process
+  // without one serves nothing and should say so at startup.
+  API_SECRET: z.string({
+    error: 'is required — every route but the health check is behind it',
+  }),
 
   SIG_ETH_RPC_URL_SEPOLIA: z.string().url().optional(),
   SIG_ETH_RPC_URL_MAINNET: z.string().url().optional(),
@@ -148,6 +153,7 @@ let evmKeyIndex = 0;
 export const env = {
   port: parsed.PORT,
   nodeEnv: parsed.NODE_ENV,
+  apiSecret: parsed.API_SECRET,
 
   /** Rotates on each read; all five slots are visited regardless of how many are set. */
   get evmSk() {
