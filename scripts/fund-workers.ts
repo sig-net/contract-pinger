@@ -174,9 +174,9 @@ const main = async () => {
   // from while the real ones run dry.
   const requester =
     process.env.SIG_BIDIRECTIONAL_REQUESTER_PUBKEY ??
-    (process.env.SIG_SOL_SK
+    (env.solSk
       ? Keypair.fromSecretKey(
-          new Uint8Array(JSON.parse(process.env.SIG_SOL_SK))
+          new Uint8Array(JSON.parse(env.solSk))
         ).publicKey.toBase58()
       : undefined);
   if (!requester) {
@@ -184,6 +184,7 @@ const main = async () => {
       "Set SIG_BIDIRECTIONAL_REQUESTER_PUBKEY to the deployed service's Solana public key " +
         '(or SIG_SOL_SK locally, from which it is derived)'
     );
+    return;
   }
   new PublicKey(requester); // rejects a malformed value before anything is sent
 

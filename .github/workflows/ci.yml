@@ -22,6 +22,12 @@ jobs:
         run: pnpm install
       - name: Build
         run: pnpm build
+      # `pnpm build` only compiles src/. Tests and scripts import from it and
+      # can break against a change there without anything noticing, which is
+      # how a deleted module stayed imported by the end-to-end test through a
+      # whole refactor.
+      - name: Typecheck tests and scripts
+        run: pnpm typecheck
 
   prettier-check:
     runs-on: ubuntu-latest

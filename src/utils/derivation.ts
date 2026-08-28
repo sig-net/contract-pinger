@@ -109,6 +109,13 @@ export class DerivationMismatchError extends Error {
  * This is the cheapest possible detector for a root key paired with the wrong
  * program: every other symptom of that mistake shows up as a transaction that
  * silently never mines.
+ *
+ * signet.js has `utils.cryptography.verifyRecoveredAddress`, which is the same
+ * check, but it re-derives the address — spinning up an adapter against a
+ * placeholder RPC host to do so — and returns a boolean, swallowing which
+ * address it actually recovered. Both are already in hand here, and the
+ * mismatch itself is the diagnostic: it says which network's key was paired
+ * with which program. A boolean would not.
  */
 export const assertDerivedSender = (expected: Hex, recovered: Hex): void => {
   if (getAddress(expected) !== getAddress(recovered)) {

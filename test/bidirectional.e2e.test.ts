@@ -3,7 +3,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { Server } from 'http';
 
 import { app } from '../src/index';
-import { useEnv } from '../src/utils/useEnv';
+import { env } from '../src/utils/env';
 
 /**
  * The real round trip: Solana request, MPC signature, Ethereum broadcast, MPC
@@ -31,7 +31,7 @@ const POLL_INTERVAL_MS = 10_000;
 // legitimately spend the full signature, confirmation and respond budgets in
 // sequence, and a shorter deadline here would report a healthy job as a
 // failure. Slack covers polling granularity and startup.
-const { bidirectional } = useEnv();
+const { bidirectional } = env;
 const DEADLINE_MS =
   bidirectional.signatureTimeoutMs +
   bidirectional.ethConfirmTimeoutMs +
