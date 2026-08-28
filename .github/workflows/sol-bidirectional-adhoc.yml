@@ -1,16 +1,16 @@
 name: Solana Bidirectional (ad hoc)
 
-# Drives a load test against the deployed pinger, on request.
+# Runs a load test entirely inside the job: it starts a pinger, drives it, and
+# throws it away. Nothing external is touched beyond the chains themselves, so
+# this needs no access to the deployed service and cannot disturb it.
 #
-# The service under test is the deployed one, not a copy started inside the
-# job, so this needs almost no secrets: the deployed instance holds its own
-# keys and RPC URLs, and the jobs run on its funded addresses. That is also
-# what makes the result meaningful — it measures the thing that is actually
-# serving, rather than a fresh process with a different key and an empty pool.
+# The addresses under test are derived from this environment's SIG_SOL_SK, so
+# they are this job's own pool and have to be funded before a run does
+# anything. `pnpm fund` derives the same set from the same key.
 #
-# Unscheduled on purpose. Every job spends gas from addresses only a sweep
-# refills, so a recurring run is a standing cost that should be decided
-# deliberately rather than inherited from a default.
+# Unscheduled on purpose: every job spends gas from addresses only a sweep
+# refills, so a recurring run is a standing cost that should be chosen rather
+# than inherited.
 on:
   workflow_dispatch:
     inputs:
@@ -35,17 +35,17 @@ on:
         options:
           - eth_self_transfer
           - erc20_zero_transfer
-      url:
-        description: Pinger to drive
+      paths:
+        description: Derived addresses to spread jobs across
         required: false
-        default: https://contract-ping.sig.network
+        default: '10'
         type: string
 
 permissions:
   contents: read
 
-# The deployed instance has one address pool and one arrival-rate limit, so
-# two runs would contend for the same addresses and starve each other on 429s.
+# The derived addresses are shared state: two runs would lease the same ones
+# and collide on their nonces.
 concurrency:
   group: sol-bidirectional-adhoc
   cancel-in-progress: false
@@ -53,15 +53,19 @@ concurrency:
 jobs:
   loadtest:
     runs-on: ubuntu-latest
-    # Submission is bounded by the service's arrival-rate limit, and the last
-    # job then waits out Ethereum finality: roughly `jobs / rate` minutes plus
-    # forty. Generous enough for a few hundred jobs at the default rate.
+    # Submission is bounded by the arrival-rate limit and the last job then
+    # waits out Ethereum finality: roughly `jobs / rate` minutes plus forty.
     timeout-minutes: 120
     environment: Pinger Test ENV
     env:
-      # The deployed service's own secret — the same value k6 sends. Nothing
-      # else here is needed: the pinger holds its keys and RPC URLs.
-      API_SECRET: ${{ secrets.LT_PINGER_API_KEY }}
+      # This job's own server, so the secret is local to the job rather than
+      # anything deployed.
+      API_SECRET: adhoc-loadtest
+      PORT: '3001'
+      SIG_ETH_RPC_URL_SEPOLIA: ${{ secrets.SIG_ETH_RPC_URL_SEPOLIA }}
+      SIG_SOL_RPC_URL_DEV: ${{ secrets.SIG_SOL_RPC_URL_DEV }}
+      SIG_SOL_SK: ${{ secrets.SIG_SOL_SK }}
+      SIG_BIDIRECTIONAL_PATHS: ${{ inputs.paths || '10' }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -73,47 +77,75 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
-      - name: Validate configuration
+      - name: Validate required secrets
         run: |
           set -euo pipefail
-          if [ -z "${API_SECRET:-}" ]; then
-            echo "::error::Missing secret LT_PINGER_API_KEY — the deployed pinger rejects every request without it"
-            exit 1
-          fi
+          for name in SIG_ETH_RPC_URL_SEPOLIA SIG_SOL_RPC_URL_DEV SIG_SOL_SK; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Missing required secret: ${name}"
+              exit 1
+            fi
+          done
 
-      # Reports each address and its balance before spending anything, so a
-      # run that is about to fail on gas says so up front rather than after
-      # submitting jobs that cannot broadcast.
+      - name: Build
+        run: pnpm build
+
+      - name: Start the pinger
+        run: |
+          set -euo pipefail
+          pnpm start > pinger.log 2>&1 &
+          echo $! > pinger.pid
+          for _ in $(seq 1 30); do
+            if curl -sf "http://localhost:${PORT}/" > /dev/null; then
+              echo "pinger up"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::Pinger did not start"
+          cat pinger.log
+          exit 1
+
+      # Reports each address and its balance before anything is spent, so a run
+      # that cannot broadcast says so now rather than after submitting jobs.
       - name: Check worker funding
         run: |
           set -euo pipefail
           curl -sS --fail-with-body \
             -H "x-api-secret: ${API_SECRET}" \
-            "${URL}/sign_bidirectional/workers?env=${ENV}" \
-            | tee workers.json | jq -r '.workers[] | "  \(.path)  \(.address)  \(.balanceWei) wei\(if .underfunded then "  UNDERFUNDED" else "" end)"'
+            "http://localhost:${PORT}/sign_bidirectional/workers?env=${ENV}" \
+            | tee workers.json \
+            | jq -r '.workers[] | "  \(.path)  \(.address)  \(.balanceWei) wei\(if .underfunded then "  UNDERFUNDED" else "" end)"'
 
           short=$(jq '[.workers[] | select(.underfunded)] | length' workers.json)
           total=$(jq '.workers | length' workers.json)
-          echo "${short}/${total} addresses are below the minimum"
+          echo "${short}/${total} addresses below the minimum"
           if [ "${short}" -eq "${total}" ]; then
-            echo "::error::Every address is underfunded; run the Fund Bidirectional Workers workflow first"
+            echo "::error::Every address is underfunded. Fund the addresses above, or run Fund Bidirectional Workers."
             exit 1
           fi
           if [ "${short}" -gt 0 ]; then
-            echo "::warning::${short} address(es) underfunded — throughput will be limited to the rest"
+            echo "::warning::${short} address(es) underfunded; throughput is limited to the rest"
           fi
         env:
-          URL: ${{ inputs.url || 'https://contract-ping.sig.network' }}
           ENV: ${{ inputs.env || 'testnet' }}
 
       - name: Drive the load test
         run: |
+          set -euo pipefail
           pnpm loadtest \
             --jobs "${{ inputs.jobs || '50' }}" \
             --env "${{ inputs.env || 'testnet' }}" \
             --mode "${{ inputs.mode || 'eth_self_transfer' }}" \
-            --url "${{ inputs.url || 'https://contract-ping.sig.network' }}" \
-          | tee loadtest.log
+            --url "http://localhost:${PORT}" \
+            | tee loadtest.log
+
+      - name: Stop the pinger
+        if: always()
+        run: |
+          [ -f pinger.pid ] && kill "$(cat pinger.pid)" 2>/dev/null || true
+          echo "--- last 40 lines of the pinger log ---"
+          tail -40 pinger.log || true
 
       - name: Write job summary
         if: always()
@@ -121,10 +153,9 @@ jobs:
           {
             echo "## Solana Bidirectional (ad hoc)"
             echo
-            echo "- Target: \`${{ inputs.url || 'https://contract-ping.sig.network' }}\`"
             echo "- Network: \`${{ inputs.env || 'testnet' }}\`"
             echo "- Mode: \`${{ inputs.mode || 'eth_self_transfer' }}\`"
-            echo "- Jobs: \`${{ inputs.jobs || '50' }}\`"
+            echo "- Jobs: \`${{ inputs.jobs || '50' }}\` across \`${{ inputs.paths || '10' }}\` addresses"
             echo
             if [ -f loadtest.log ]; then
               echo '```'
