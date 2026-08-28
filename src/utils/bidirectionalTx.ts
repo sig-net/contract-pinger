@@ -30,6 +30,16 @@ export const KEY_VERSION = 1;
 
 export type BidirectionalEnvironment = 'dev' | 'testnet' | 'mainnet';
 
+const SEPOLIA_CHAIN_ID = 11155111;
+const MAINNET_CHAIN_ID = 1;
+
+/** Values reach us both with and without the prefix; callers want one form. */
+export const withHexPrefix = (value: string): Hex =>
+  (value.startsWith('0x') ? value : `0x${value}`) as Hex;
+
+export const withoutHexPrefix = (value: string): string =>
+  value.replace(/^0x/, '');
+
 /**
  * Which Ethereum each MPC network's round trip settles on.
  *
@@ -40,19 +50,19 @@ export type BidirectionalEnvironment = 'dev' | 'testnet' | 'mainnet';
 export const ETHEREUM_TARGETS = {
   dev: {
     chain: sepolia,
-    chainId: 11155111,
+    chainId: SEPOLIA_CHAIN_ID,
     rpcUrl: () => env.ethRpcUrlSepolia,
     erc20: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
   },
   testnet: {
     chain: sepolia,
-    chainId: 11155111,
+    chainId: SEPOLIA_CHAIN_ID,
     rpcUrl: () => env.ethRpcUrlSepolia,
     erc20: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
   },
   mainnet: {
     chain: mainnet,
-    chainId: 1,
+    chainId: MAINNET_CHAIN_ID,
     rpcUrl: () => env.ethRpcUrlMainnet,
     erc20: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
   },
@@ -211,16 +221,21 @@ export const attachSignature = async ({
   // that form. The MPC reports `v` either way — 0/1 and 27/28 have both been
   // observed — and normalizing here is what makes the two equivalent.
   const rsv: RSVSignature = {
-    r: signature.r.replace(/^0x/, ''),
-    s: signature.s.replace(/^0x/, ''),
+    r: withoutHexPrefix(signature.r),
+    s: withoutHexPrefix(signature.s),
     v: signature.v < 27 ? signature.v + 27 : signature.v,
   };
 
+  // Neither is read: signing is pure, and the adapter reaches for a client or
+  // a contract only in its RPC methods. Constructing one here keeps this
+  // function callable without a network.
   const adapter = new chainAdapters.evm.EVM({
     publicClient: undefined as never,
     contract: undefined as never,
   });
   const serialized = adapter.finalizeTransactionSigning({
+    // The adapter types its unsigned transaction as viem's *request* shape
+    // rather than its serializable one; the fields set here belong to both.
     transaction: unsigned as never,
     rsvSignatures: [rsv],
   }) as Hex;
@@ -233,8 +248,8 @@ export const attachSignature = async ({
   const recoveredFrom = await recoverAddress({
     hash: keccak256(serializeTransaction(unsigned)),
     signature: {
-      r: `0x${rsv.r}` as Hex,
-      s: `0x${rsv.s}` as Hex,
+      r: withHexPrefix(rsv.r),
+      s: withHexPrefix(rsv.s),
       yParity: rsv.v - 27,
     },
   });

@@ -35,6 +35,7 @@ import { buildChainSignatureContract } from '../src/utils/initSolana';
 import {
   createEthereumClient,
   ETHEREUM_TARGETS,
+  withHexPrefix,
 } from '../src/utils/bidirectionalTx';
 import { buildPaths } from '../src/utils/workerPool';
 import { env } from '../src/utils/env';
@@ -48,16 +49,25 @@ const ENVIRONMENTS = {
 const PLAIN_TRANSFER_GAS = 21_000n;
 type Env = keyof typeof ENVIRONMENTS;
 
-const arg = (name: string, fallback?: string) => {
+/** A `--name value` argument, or the fallback. */
+function arg(name: string, fallback: string): string;
+function arg(name: string, fallback?: string): string | undefined;
+function arg(name: string, fallback?: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
   return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : fallback;
-};
+}
 const flag = (name: string) => process.argv.includes(`--${name}`);
 
-const fail = (message: string): never => {
+/**
+ * Declared rather than assigned to a const: TypeScript only narrows past a
+ * `never`-returning call for function declarations, so the arrow form left
+ * every value it guards still possibly-undefined and needed a `return` or a
+ * `!` at each use.
+ */
+function fail(message: string): never {
   console.error(`\n✗ ${message}`);
   process.exit(1);
-};
+}
 
 /**
  * Compare the locally derived addresses against what the service reports.
@@ -169,7 +179,6 @@ const main = async () => {
     fail(
       `No Ethereum RPC configured for ${envs[0]} (chain ${ETHEREUM_TARGETS[envs[0]].chainId})`
     );
-    return;
   }
 
   // Derived from the signing key rather than configured, so there is nothing
@@ -197,7 +206,6 @@ const main = async () => {
         `SIG_BIDIRECTIONAL_REQUESTER_PUBKEY says ${expectedRequester}. ` +
         'Every worker address follows from this key, so the two must agree.'
     );
-    return;
   }
 
   const requester = derivedRequester ?? expectedRequester;
@@ -206,7 +214,6 @@ const main = async () => {
       'Set SIG_SOL_SK to the key the service signs with (the requester is its ' +
         'public key), or SIG_BIDIRECTIONAL_REQUESTER_PUBKEY to that public key directly'
     );
-    return;
   }
 
   new PublicKey(requester); // rejects a malformed value before anything is sent
@@ -228,8 +235,8 @@ const main = async () => {
   // the addresses derived from them would differ.
   const expectedWorkers = Number(arg('paths', String(env.bidirectional.paths)));
   const pathPrefix = env.bidirectional.pathPrefix;
-  const minBalance = parseEther(arg('min', env.funding.minEth)!);
-  const topUpTo = parseEther(arg('topup', env.funding.topUpEth)!);
+  const minBalance = parseEther(arg('min', env.funding.minEth));
+  const topUpTo = parseEther(arg('topup', env.funding.topUpEth));
   const maxPerAddress = parseEther(env.funding.maxPerAddressEth);
   const maxPerRun = parseEther(env.funding.maxPerRunEth);
   const reserve = parseEther(env.funding.reserveEth);
@@ -266,12 +273,12 @@ const main = async () => {
   if (!solanaRpc) fail('SIG_SOL_RPC_URL_DEV is not set');
 
   const provider = new anchor.AnchorProvider(
-    new Connection(solanaRpc!, 'confirmed'),
+    new Connection(solanaRpc, 'confirmed'),
     new anchor.Wallet(Keypair.generate()),
     {}
   );
 
-  const client = createEthereumClient(envs[0], rpcUrl!);
+  const client = createEthereumClient(envs[0], rpcUrl);
   const chainId = await client.getChainId();
   const expectedChainId = ETHEREUM_TARGETS[envs[0]].chainId;
   if (chainId !== expectedChainId) {
@@ -294,7 +301,7 @@ const main = async () => {
     const derived = await deriveWorkerAddresses({
       chainSigContract,
       client,
-      requester: requester!,
+      requester: requester,
       paths: buildPaths(pathPrefix, expectedWorkers),
     });
     if (derived.length !== expectedWorkers) {
@@ -320,9 +327,7 @@ const main = async () => {
     }
   }
 
-  const account = privateKeyToAccount(
-    (fundingKey!.startsWith('0x') ? fundingKey! : `0x${fundingKey}`) as Hex
-  );
+  const account = privateKeyToAccount(withHexPrefix(fundingKey));
 
   console.log(`requester   : ${requester}`);
   console.log(
@@ -393,7 +398,7 @@ const main = async () => {
   const wallet = createWalletClient({
     account,
     chain: ETHEREUM_TARGETS[envs[0]].chain,
-    transport: http(rpcUrl!),
+    transport: http(rpcUrl),
   });
 
   for (const w of plan) {

@@ -6,6 +6,7 @@ import {
   attachSignature,
   createEthereumClient,
   ETHEREUM_TARGETS,
+  withHexPrefix,
   ETHEREUM_CAIP2_ID,
   EXPECTED_SERIALIZED_OUTPUT,
   KEY_VERSION,
@@ -33,12 +34,10 @@ const contractAddresses = {
   mainnet: constants.CONTRACT_ADDRESSES.SOLANA.MAINNET,
 };
 
-const toHexString = (value: unknown): string => {
-  if (typeof value === 'string') {
-    return value.startsWith('0x') ? value : `0x${value}`;
-  }
-  return `0x${Buffer.from(value as Uint8Array).toString('hex')}`;
-};
+const toHexString = (value: unknown): string =>
+  typeof value === 'string'
+    ? withHexPrefix(value)
+    : `0x${Buffer.from(value as Uint8Array).toString('hex')}`;
 
 /**
  * Owns everything shared across jobs for one environment: the address pool,

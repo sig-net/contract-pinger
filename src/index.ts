@@ -239,7 +239,7 @@ app.post(
         mode: txMode,
       });
       res.status(202).json({ jobId: job.id, state: job.state, mode: txMode });
-    } catch (error: any) {
+    } catch (error) {
       console.error('sign_bidirectional endpoint error:', error);
       res.status(500).json({
         error: 'Failed to start bidirectional job',
@@ -276,9 +276,11 @@ app.get(
           leases: w.leases,
         })),
       });
-    } catch (error: any) {
+    } catch (error) {
       console.error('sign_bidirectional/workers error:', error);
-      res.status(500).json({ error: error.message || String(error) });
+      res.status(500).json({
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 );
