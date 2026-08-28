@@ -1,4 +1,4 @@
-name: Bidirectional Round Trip (manual)
+name: Solana Bidirectional (ad hoc)
 
 # On demand only. Runs the full round trip from CI against the code on a
 # branch, so a change can be exercised without local setup.
@@ -33,7 +33,7 @@ permissions:
 # The address pool is shared state: two runs would contend for the same
 # derived addresses and their nonces.
 concurrency:
-  group: bidirectional-round-trip
+  group: sol-bidirectional-adhoc
   cancel-in-progress: false
 
 jobs:
@@ -83,7 +83,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "## Bidirectional Round Trip"
+            echo "## Solana Bidirectional (ad hoc)"
             echo
             echo "- Mode: \`${SIG_BIDIRECTIONAL_E2E_MODE}\`"
             echo "- Network: \`${SIG_BIDIRECTIONAL_E2E_ENV}\`"

@@ -60,7 +60,8 @@ leg waits for Ethereum finality. Run it on its own:
 pnpm test:e2e
 ```
 
-The `Bidirectional Round Trip` workflow runs the same thing from CI on demand,
+The `Solana Bidirectional (ad hoc)` workflow runs the same thing from CI on
+demand,
 which exercises a branch without local setup. It needs a funded derived address
 for the CI environment's own `SIG_SOL_SK`, since the addresses follow from
 whichever key signs.
