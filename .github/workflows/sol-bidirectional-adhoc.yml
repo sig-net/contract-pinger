@@ -4,9 +4,10 @@ name: Solana Bidirectional (ad hoc)
 # throws it away. Nothing external is touched beyond the chains themselves, so
 # this needs no access to the deployed service and cannot disturb it.
 #
-# The addresses under test are derived from this environment's SIG_SOL_SK, so
-# they are this job's own pool and have to be funded before a run does
-# anything. `pnpm fund` derives the same set from the same key.
+# The addresses under test are derived from this environment's SIG_SOL_SK and
+# from the chosen network's program, so each network has its own pool and both
+# have to be funded separately. `pnpm fund` derives the same sets from the same
+# key.
 #
 # Unscheduled on purpose: every job spends gas from addresses only a sweep
 # refills, so a recurring run is a standing cost that should be chosen rather
@@ -93,7 +94,10 @@ jobs:
       - name: Start the pinger
         run: |
           set -euo pipefail
-          pnpm start > pinger.log 2>&1 &
+          # `node` directly, not `pnpm start`: pnpm forks the server as a
+          # child, so `$!` would capture the wrapper and the stop step below
+          # would leave the real process running.
+          node dist/index.js > pinger.log 2>&1 &
           echo $! > pinger.pid
           for _ in $(seq 1 30); do
             if curl -sf "http://localhost:${PORT}/" > /dev/null; then
@@ -130,6 +134,10 @@ jobs:
         env:
           ENV: ${{ inputs.env || 'testnet' }}
 
+      # The driver exits non-zero if any job failed, so a single MPC timeout in
+      # fifty reds the run. Deliberate for an on-request test that a person
+      # reads: the summary below renders either way, and green means every
+      # round trip completed rather than most of them.
       - name: Drive the load test
         run: |
           set -euo pipefail
