@@ -33,7 +33,7 @@ permissions:
 # The address pool is shared state: two runs would contend for the same
 # derived addresses and their nonces.
 concurrency:
-  group: bidirectional-monitor
+  group: bidirectional-round-trip
   cancel-in-progress: false
 
 jobs:
