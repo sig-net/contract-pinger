@@ -107,6 +107,7 @@ export class BidirectionalService {
       const { chainSigContract, keypair } = this.solana();
       const derived = await deriveWorkerAddresses({
         chainSigContract,
+        client: this.client,
         requester: keypair.publicKey.toString(),
         paths: this.pool.all().map(w => w.path),
       });

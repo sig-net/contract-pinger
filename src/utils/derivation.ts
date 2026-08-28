@@ -1,6 +1,5 @@
-import { getAddress, type Hex } from 'viem';
-import { publicKeyToAddress } from 'viem/utils';
-import type { contracts } from 'signet.js';
+import { getAddress, type Hex, type PublicClient } from 'viem';
+import { chainAdapters, type contracts } from 'signet.js';
 import { KEY_VERSION } from './bidirectionalTx';
 
 type ChainSigContract = InstanceType<
@@ -14,23 +13,37 @@ type ChainSigContract = InstanceType<
  * KDF chain id and whichever root key the contract resolved — the configured
  * override, or the one signet.js paired to the program address.
  */
+/**
+ * Derive the Ethereum address a `(requester, path)` pair controls.
+ *
+ * Delegated to signet.js's EVM adapter rather than reimplemented: it applies
+ * the same keccak-and-truncate over the same derived public key, and keeping
+ * one implementation means a change upstream cannot silently leave this one
+ * deriving different addresses than the ones jobs actually sign from.
+ */
 const deriveEthAddress = async ({
   chainSigContract,
+  client,
   predecessor,
   path,
 }: {
   chainSigContract: ChainSigContract;
+  client: PublicClient;
   predecessor: string;
   path: string;
 }): Promise<Hex> => {
-  const publicKey: string = await chainSigContract.getDerivedPublicKey({
+  // The client is unused here — derivation is pure crypto over the contract's
+  // root key — but the adapter takes one to construct.
+  const adapter = new chainAdapters.evm.EVM({
+    publicClient: client,
+    contract: chainSigContract,
+  });
+  const { address } = await adapter.deriveAddressAndPublicKey(
     predecessor,
     path,
-    keyVersion: KEY_VERSION,
-  });
-  return publicKeyToAddress(
-    (publicKey.startsWith('0x') ? publicKey : `0x${publicKey}`) as Hex
+    KEY_VERSION
   );
+  return address as Hex;
 };
 
 export interface DerivedWorker {
@@ -53,10 +66,12 @@ export interface DerivedWorker {
  */
 export const deriveWorkerAddresses = async ({
   chainSigContract,
+  client,
   requester,
   paths,
 }: {
   chainSigContract: ChainSigContract;
+  client: PublicClient;
   requester: string;
   paths: readonly string[];
 }): Promise<DerivedWorker[]> => {
@@ -66,6 +81,7 @@ export const deriveWorkerAddresses = async ({
       path,
       address: await deriveEthAddress({
         chainSigContract,
+        client,
         predecessor: requester,
         path,
       }),

@@ -256,6 +256,13 @@ const main = async () => {
     {}
   );
 
+  const client = createEthereumClient(envs[0], rpcUrl!);
+  const chainId = await client.getChainId();
+  const expectedChainId = ETHEREUM_TARGETS[envs[0]].chainId;
+  if (chainId !== expectedChainId) {
+    fail(`RPC reports chain ${chainId}, expected ${expectedChainId}`);
+  }
+
   const workers: (DerivedWorker & { env: Env })[] = [];
   for (const env of envs) {
     const programId = constants.CONTRACT_ADDRESSES.SOLANA[ENVIRONMENTS[env]];
@@ -271,6 +278,7 @@ const main = async () => {
     });
     const derived = await deriveWorkerAddresses({
       chainSigContract,
+      client,
       requester: requester!,
       paths: buildPaths(pathPrefix, expectedWorkers),
     });
@@ -295,13 +303,6 @@ const main = async () => {
         derived: workers.filter(w => w.env === env),
       });
     }
-  }
-
-  const client = createEthereumClient(envs[0], rpcUrl!);
-  const chainId = await client.getChainId();
-  const expectedChainId = ETHEREUM_TARGETS[envs[0]].chainId;
-  if (chainId !== expectedChainId) {
-    fail(`RPC reports chain ${chainId}, expected ${expectedChainId}`);
   }
 
   const account = privateKeyToAccount(

@@ -200,6 +200,13 @@ const hex = (value: string): Hex =>
  * ordering, the signature recovers to something other than the derived
  * address. Catching that here costs nothing; catching it after broadcast costs
  * a stuck nonce.
+ *
+ * Not routed through signet.js's `EVM#finalizeTransactionSigning`, which is a
+ * one-line wrapper over the same `serializeTransaction` call and whose
+ * `transformRSVSignature` hardcodes `v - 27`. The MPC sends `v` as 0/1 as well
+ * as 27/28, so using it would mean normalizing to 27/28 purely for the adapter
+ * to subtract 27 again — and it would require constructing an adapter, with a
+ * client, to call what is otherwise a pure function.
  */
 export const attachSignature = async ({
   unsigned,
