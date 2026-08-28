@@ -17,6 +17,13 @@ import {
 } from './utils/bidirectionalTx';
 import { env } from './utils/env';
 
+// Asserted here rather than in the schema: this is the server's requirement,
+// and the scripts share that config without serving anything.
+if (!env.apiSecret) {
+  console.error('FATAL: API_SECRET is not set. Exiting.');
+  process.exit(1);
+}
+
 const app = express();
 
 app.use(express.json());

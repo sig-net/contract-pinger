@@ -37,8 +37,9 @@ const parseArgs = (argv: string[]): Options => {
     mode: get('mode', env.bidirectional.txMode),
     url: get('url', `http://localhost:${env.port}`),
     // Environment only. A secret passed as an argument is visible in `ps`
-    // output and lands in shell history.
-    secret: env.apiSecret,
+    // output and lands in shell history. Checked below, since the driver
+    // cannot reach any endpoint without it.
+    secret: env.apiSecret ?? '',
     pollMs: Number(get('poll', '15000')),
   };
 };
