@@ -210,9 +210,6 @@ export const attachSignature = async ({
   // `transformRSVSignature` computes `v - 27`, so the value has to arrive in
   // that form. The MPC reports `v` either way — 0/1 and 27/28 have both been
   // observed — and normalizing here is what makes the two equivalent.
-  // `transformRSVSignature` computes `v - 27`, so the value has to arrive in
-  // that form. The MPC has been seen reporting `v` both ways — 0/1 and 27/28 —
-  // and normalizing here is what makes the two equivalent.
   const rsv: RSVSignature = {
     r: signature.r.replace(/^0x/, ''),
     s: signature.s.replace(/^0x/, ''),
