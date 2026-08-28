@@ -359,7 +359,7 @@ describe('signature attachment and derivation check', () => {
 
     const attached = await attachSignature({
       unsigned,
-      signature: { r: signature.r, s: signature.s, v: signature.v! },
+      signature: { r: signature.r, s: signature.s, v: Number(signature.v) },
     });
 
     expect(attached.recoveredFrom.toLowerCase()).toBe(
@@ -377,7 +377,7 @@ describe('signature attachment and derivation check', () => {
     });
     const attached = await attachSignature({
       unsigned,
-      signature: { r: signature.r, s: signature.s, v: signature.v! },
+      signature: { r: signature.r, s: signature.s, v: Number(signature.v) },
     });
 
     const somebodyElse = '0x0000000000000000000000000000000000000042' as const;
@@ -421,7 +421,7 @@ describe('signature attachment and derivation check', () => {
     });
     const attached = await attachSignature({
       unsigned,
-      signature: { r: signature.r, s: signature.s, v: signature.v! },
+      signature: { r: signature.r, s: signature.s, v: Number(signature.v) },
     });
 
     expect(attached.recoveredFrom.toLowerCase()).not.toBe(

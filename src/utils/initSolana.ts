@@ -1,9 +1,16 @@
 import { Connection, Keypair } from '@solana/web3.js';
 import * as anchor from '@coral-xyz/anchor';
 import { contracts } from 'signet.js';
+import type { BidirectionalEnvironment } from './bidirectionalTx';
 import { env } from './env';
 
-export type SolanaEnvironment = 'dev' | 'testnet' | 'mainnet';
+/**
+ * Re-exported rather than declared again: an MPC network selects a Solana
+ * cluster and an Ethereum together, so two lists of the same names would drift
+ * the moment one gained a network.
+ */
+export type { BidirectionalEnvironment as SolanaEnvironment } from './bidirectionalTx';
+type SolanaEnvironment = BidirectionalEnvironment;
 
 const resolveConfig = (environment: SolanaEnvironment) => {
   const { solRpcUrlDevnet, solRpcUrlMainnet, solSk } = env;

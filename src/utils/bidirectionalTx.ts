@@ -9,7 +9,7 @@ import {
   type TransactionSerializableEIP1559,
 } from 'viem';
 import { mainnet, sepolia } from 'viem/chains';
-import { chainAdapters } from 'signet.js';
+import { chainAdapters, type RSVSignature } from 'signet.js';
 import { env } from './env';
 import { keccak256 } from 'viem/utils';
 
@@ -184,12 +184,6 @@ export const buildTransaction = async ({
   };
 };
 
-export interface RsvSignature {
-  r: string;
-  s: string;
-  v: number | string | bigint;
-}
-
 /**
  * Attach an MPC signature to the unsigned transaction and recover the sender
  * it actually produces.
@@ -211,16 +205,18 @@ export const attachSignature = async ({
   signature,
 }: {
   unsigned: TransactionSerializableEIP1559;
-  signature: RsvSignature;
+  signature: RSVSignature;
 }): Promise<{ serialized: Hex; recoveredFrom: Hex }> => {
   // `transformRSVSignature` computes `v - 27`, so the value has to arrive in
   // that form. The MPC reports `v` either way — 0/1 and 27/28 have both been
   // observed — and normalizing here is what makes the two equivalent.
-  const rawV = BigInt(signature.v);
-  const rsv = {
+  // `transformRSVSignature` computes `v - 27`, so the value has to arrive in
+  // that form. The MPC has been seen reporting `v` both ways — 0/1 and 27/28 —
+  // and normalizing here is what makes the two equivalent.
+  const rsv: RSVSignature = {
     r: signature.r.replace(/^0x/, ''),
     s: signature.s.replace(/^0x/, ''),
-    v: Number(rawV < 27n ? rawV + 27n : rawV),
+    v: signature.v < 27 ? signature.v + 27 : signature.v,
   };
 
   const adapter = new chainAdapters.evm.EVM({
