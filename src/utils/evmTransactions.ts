@@ -1,5 +1,5 @@
 import type { PublicClient, WalletClient } from 'viem';
-import type { contracts } from 'signet.js';
+import type { contracts } from '@sig-net/signet.js';
 
 type ChainSigContract = InstanceType<
   typeof contracts.evm.ChainSignatureContract

@@ -2,7 +2,7 @@ import { createPublicClient, createWalletClient, http } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { sepolia, mainnet } from 'viem/chains';
 import { env } from './env';
-import { contracts } from 'signet.js';
+import { contracts } from '@sig-net/signet.js';
 
 export const initEthereum = ({
   contractAddress,

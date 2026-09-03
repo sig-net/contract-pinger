@@ -9,7 +9,7 @@ import {
   type TransactionSerializableEIP1559,
 } from 'viem';
 import { mainnet, sepolia } from 'viem/chains';
-import { chainAdapters, type RSVSignature } from 'signet.js';
+import { chainAdapters, type RSVSignature } from '@sig-net/signet.js';
 import { env } from './env';
 import { keccak256 } from 'viem/utils';
 

@@ -1,6 +1,6 @@
 import { initSolana } from '../utils/initSolana';
 import { getSignArgs } from '../utils/evmTransactions';
-import { constants } from 'signet.js';
+import { constants } from '@sig-net/signet.js';
 import { Transaction } from '@solana/web3.js';
 
 export const chainName = 'Solana';

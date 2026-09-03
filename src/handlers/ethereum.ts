@@ -1,6 +1,6 @@
 import { initEthereum } from '../utils/initEvm';
 import { createSignRequest } from '../utils/evmTransactions';
-import { constants } from 'signet.js';
+import { constants } from '@sig-net/signet.js';
 
 export const chainName = 'Ethereum';
 

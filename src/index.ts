@@ -308,7 +308,10 @@ app.get(
 
 app.get(
   '/sign_bidirectional/:jobId',
-  (req: express.Request, res: express.Response): void => {
+  (
+    req: express.Request<{ jobId: string }>,
+    res: express.Response
+  ): void => {
     for (const service of listBidirectionalServices()) {
       const view = service.jobs.view(req.params.jobId);
       if (view) {

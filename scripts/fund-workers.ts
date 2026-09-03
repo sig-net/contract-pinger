@@ -17,7 +17,7 @@
 import 'dotenv/config';
 import { Connection, Keypair, PublicKey } from '@solana/web3.js';
 import * as anchor from '@coral-xyz/anchor';
-import { constants } from 'signet.js';
+import { constants } from '@sig-net/signet.js';
 import {
   createWalletClient,
   formatEther,
