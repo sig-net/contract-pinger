@@ -140,9 +140,16 @@ const schema = z.object({
     .string()
     .default('0.1')
     .refine(v => /^\d+(\.\d+)?$/.test(v), 'must be a decimal number of ETH'),
+  // A floor beneath which the wallet stops spending, not a gas budget: the
+  // sweep estimates its own fees and requires `total + gas + reserve`, so
+  // whatever is set here is withheld on top of the gas already covered. Sized
+  // to leave the next sweep able to pay its way — ten transfers at ~24 gwei,
+  // well above Sepolia's usual — rather than to park a balance. Set it above
+  // what a full sweep sends and the wallet refuses to fund a pool it can
+  // plainly afford, which reads as an empty wallet and is not one.
   SIG_BIDIRECTIONAL_FUND_RESERVE_ETH: z
     .string()
-    .default('0.02')
+    .default('0.005')
     .refine(v => /^\d+(\.\d+)?$/.test(v), 'must be a decimal number of ETH'),
   SIG_BIDIRECTIONAL_FUNDING_SK: z.string().optional(),
   SIG_BIDIRECTIONAL_REQUESTER_PUBKEY: z.string().optional(),
