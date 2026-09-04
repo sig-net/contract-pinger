@@ -1,5 +1,5 @@
 import { ComputeBudgetProgram, PublicKey, Transaction } from '@solana/web3.js';
-import { constants, contracts } from 'signet.js';
+import { constants, contracts } from '@sig-net/signet.js';
 import type { Hex, PublicClient } from 'viem';
 import {
   buildTransaction,

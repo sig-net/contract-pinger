@@ -1,5 +1,5 @@
 import { getAddress, type Hex, type PublicClient } from 'viem';
-import { chainAdapters, type contracts } from 'signet.js';
+import { chainAdapters, type contracts } from '@sig-net/signet.js';
 import { KEY_VERSION } from './bidirectionalTx';
 
 type ChainSigContract = InstanceType<

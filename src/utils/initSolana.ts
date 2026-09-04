@@ -1,6 +1,6 @@
 import { Connection, Keypair } from '@solana/web3.js';
 import * as anchor from '@coral-xyz/anchor';
-import { contracts } from 'signet.js';
+import { contracts } from '@sig-net/signet.js';
 import type { BidirectionalEnvironment } from './bidirectionalTx';
 import { env } from './env';
 

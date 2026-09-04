@@ -1,6 +1,6 @@
 import * as anchor from '@coral-xyz/anchor';
 import { PublicKey, TransactionInstruction } from '@solana/web3.js';
-import type { contracts } from 'signet.js';
+import type { contracts } from '@sig-net/signet.js';
 
 type ChainSigContract = InstanceType<
   typeof contracts.solana.ChainSignatureContract
