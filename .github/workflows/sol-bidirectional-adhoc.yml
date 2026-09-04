@@ -221,12 +221,20 @@ jobs:
           short=$(jq '[.workers[] | select(.underfunded)] | length' workers.json)
           total=$(jq '.workers | length' workers.json)
           echo "${short}/${total} addresses below the minimum"
-          if [ "${short}" -eq "${total}" ]; then
-            echo "::error::Every address is underfunded after the top-up (${FUND_RESULT}). Check the funding wallet's balance, then re-run."
-            exit 1
-          fi
+
+          # Every address, not merely one: the top-up has already run, so an
+          # address still short means it could not be fixed — a dry wallet or a
+          # transfer that failed — and the next run would meet the same thing.
+          #
+          # A partly funded pool is also not the test that was asked for. The
+          # path count sets concurrency, so running 50 jobs across three
+          # addresses instead of ten measures a narrower pool at a lower
+          # arrival rate, under a heading that says otherwise.
           if [ "${short}" -gt 0 ]; then
-            echo "::warning::${short} address(es) underfunded; throughput is limited to the rest"
+            jq -r '.workers[] | select(.underfunded)
+                   | "::error::underfunded: \(.path) \(.address) holds \(.balanceWei) wei"' workers.json
+            echo "::error::${short}/${total} addresses are below the minimum after the top-up (${FUND_RESULT}). Fund them, then re-run."
+            exit 1
           fi
         env:
           ENV: ${{ inputs.env || 'testnet' }}
