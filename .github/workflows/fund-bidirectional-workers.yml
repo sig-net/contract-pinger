@@ -4,13 +4,20 @@ name: Fund Bidirectional Workers
 # than inside the service. The pinger reports balances and refuses to lease an
 # address that is short; nothing in the request path holds spending authority.
 #
-# Every fifteen minutes rather than hourly: at 10 jobs/min each address burns
-# roughly 0.0014 ETH/hour, and GitHub's scheduler runs late often enough that
-# the balance band has to absorb several missed runs on its own. See the runway
-# figure the script prints at the end of each run.
+# Daily, because the ad hoc load test tops up the addresses it is about to use
+# before it uses them — the pool is refilled on demand, not on a timer. What is
+# left for a schedule is the standing check: a pool nothing has exercised for a
+# while, and the deployed service's own addresses, which share this set and have
+# no other source. A failing run here means the funding wallet needs attention,
+# which is worth knowing before someone starts a load test rather than during.
+#
+# Restore a tighter cadence only for a consumer that spends continuously; a
+# timer cannot refill a pool faster than the run draining it, and the balance
+# band is what actually absorbs a missed sweep. See the runway figure the script
+# prints at the end of each run.
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '20 6 * * *'
   workflow_dispatch:
     inputs:
       env:
