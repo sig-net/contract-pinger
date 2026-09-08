@@ -32,6 +32,11 @@ on:
         required: false
         default: dev,testnet
         type: string
+      topup:
+        description: Fill every address to this many ETH (blank keeps the band)
+        required: false
+        default: ''
+        type: string
       dry_run:
         description: Report what would be sent, send nothing
         required: false
@@ -127,5 +132,21 @@ jobs:
             fi
           done
 
+      # Inputs reach the shell as environment variables rather than through
+      # ${{ }} interpolation into the command line, which pastes whatever was
+      # typed in the dispatch form straight into a shell string.
       - name: Fund workers
-        run: pnpm fund --env '${{ inputs.env || 'dev,testnet' }}' ${{ inputs.dry_run && '--dry-run' || '' }}
+        run: |
+          set -euo pipefail
+          args=(--env "${ENV}")
+          # Blank on the schedule and by default, which is the band: top up
+          # whatever fell below the floor and leave the rest alone. Given a
+          # target, every address below it is filled to it instead — the same
+          # switch the ad hoc load test uses to fund for a specific run.
+          if [ -n "${TOPUP}" ]; then args+=(--topup "${TOPUP}"); fi
+          if [ "${DRY_RUN}" = 'true' ]; then args+=(--dry-run); fi
+          pnpm fund "${args[@]}"
+        env:
+          ENV: ${{ inputs.env || 'dev,testnet' }}
+          TOPUP: ${{ inputs.topup }}
+          DRY_RUN: ${{ inputs.dry_run }}
