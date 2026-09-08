@@ -4,20 +4,27 @@ name: Fund Bidirectional Workers
 # than inside the service. The pinger reports balances and refuses to lease an
 # address that is short; nothing in the request path holds spending authority.
 #
-# Daily, because the ad hoc load test tops up the addresses it is about to use
-# before it uses them — the pool is refilled on demand, not on a timer. What is
-# left for a schedule is the standing check: a pool nothing has exercised for a
-# while, and the deployed service's own addresses, which share this set and have
-# no other source. A failing run here means the funding wallet needs attention,
-# which is worth knowing before someone starts a load test rather than during.
+# Hourly, because that is what the band can cover. An address holds
+# SIG_BIDIRECTIONAL_FUND_TOPUP_ETH - SIG_BIDIRECTIONAL_FUND_MIN_ETH of
+# headroom, which at the measured gas is ~64 minutes of continuous spend, and a
+# wider band cannot buy a longer gap: a day at that rate needs ~0.034 ETH per
+# address, above the per-address cap and several times the per-run one.
 #
-# Restore a tighter cadence only for a consumer that spends continuously; a
-# timer cannot refill a pool faster than the run draining it, and the balance
-# band is what actually absorbs a missed sweep. See the runway figure the script
-# prints at the end of each run.
+# The ad hoc load test tops up the addresses it is about to use before it uses
+# them, so a run does not depend on this timer to start. What it does depend on
+# is a sweep landing mid-run — a run may last hours, longer than the headroom it
+# starts with — and on the deployed service, which shares this address set and
+# has no on-demand path of its own. Against a full pool a sweep sends nothing,
+# so the cadence costs a workflow minute rather than gas.
+#
+# What this does not do is watch the funding wallet. The script returns as soon
+# as it finds every address above the floor, and both reads of the wallet — the
+# affordability check and the runway figure — sit on the path that sends. So a
+# quiet hour reports the pool, not what is left to refill it with, and an empty
+# wallet surfaces on the first hour a top-up is actually due.
 on:
   schedule:
-    - cron: '20 6 * * *'
+    - cron: '20 * * * *'
   workflow_dispatch:
     inputs:
       env:
@@ -75,8 +82,10 @@ jobs:
       #
       #   runs of headroom = (topup - min) / gas per run
       #
-      # The defaults give ~64 minutes at 10 jobs/min, or four missed sweeps,
-      # against a measured 0.0000234 ETH per eth_self_transfer round trip.
+      # The defaults give ~64 minutes at 10 jobs/min against a measured
+      # 0.0000234 ETH per eth_self_transfer round trip — one hourly sweep, with
+      # minutes to spare rather than hours. Widen the band before stretching
+      # the schedule, and re-check that against the per-address cap below.
       SIG_BIDIRECTIONAL_FUND_MIN_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_MIN_ETH || '0.002' }}
       SIG_BIDIRECTIONAL_FUND_TOPUP_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_TOPUP_ETH || '0.0035' }}
       SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH || '0.02' }}

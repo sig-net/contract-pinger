@@ -217,9 +217,11 @@ runs of headroom = (topup - min) / gas per run
 ```
 
 At a measured 0.0000234 ETH per `eth_self_transfer` round trip and 10 jobs/min
-spread over 10 addresses, the 0.002 → 0.0035 default gives about 64 minutes —
-four missed fifteen-minute sweeps. Re-measure when the mode or Sepolia gas
-moves.
+spread over 10 addresses, the 0.002 → 0.0035 default gives about 64 minutes,
+which is what sets the hourly sweep. Stretching the schedule is not a matter of
+widening the band: covering a day at that rate needs about 0.034 ETH per
+address, above the per-address cap and several times the per-run one.
+Re-measure when the mode or Sepolia gas moves.
 
 An address is released back to the pool once its transaction confirms, not when
 the job finishes: the nonce is spent at mining time, long before the MPC
