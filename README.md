@@ -223,6 +223,12 @@ widening the band: covering a day at that rate needs about 0.034 ETH per
 address, above the per-address cap and several times the per-run one.
 Re-measure when the mode or Sepolia gas moves.
 
+The floor of the band is `SIG_BIDIRECTIONAL_MIN_BALANCE_WEI` — one variable,
+read by both the service that refuses to lease below it and the sweep that tops
+up below it. There is deliberately no separate funding minimum: a pair of them
+strands any address that lands between the two, unusable and never refilled,
+with nothing reporting a fault.
+
 An address is released back to the pool once its transaction confirms, not when
 the job finishes: the nonce is spent at mining time, long before the MPC
 finishes waiting for finality.

@@ -238,27 +238,16 @@ const main = async () => {
   // the addresses derived from them would differ.
   const expectedWorkers = Number(arg('paths', String(env.bidirectional.paths)));
   const pathPrefix = env.bidirectional.pathPrefix;
-  const minBalance = parseEther(arg('min', env.funding.minEth));
+  // The same figure the service leases against, read from the same variable
+  // rather than a second one kept level by hand. Not overridable per-run: an
+  // override is how the two drift apart for the length of a sweep, and an
+  // address stranded between the two figures is not visible from either side.
+  const minBalance = env.bidirectional.minBalanceWei;
   const topUpTo = parseEther(arg('topup', env.funding.topUpEth));
   const maxPerAddress = parseEther(env.funding.maxPerAddressEth);
   const maxPerRun = parseEther(env.funding.maxPerRunEth);
   const reserve = parseEther(env.funding.reserveEth);
   const dryRun = flag('dry-run');
-
-  // The service refuses to lease below SIG_BIDIRECTIONAL_MIN_BALANCE_WEI. If
-  // this sweep only tops up below some lower figure, an address between the two
-  // is stranded — unusable and never refilled — and the pool quietly shrinks.
-  // Read through the service's own schema rather than re-parsed here: two
-  // readings of the same variable are two chances to disagree about its
-  // default, and this comparison exists precisely to catch a disagreement.
-  const serviceMin = env.bidirectional.minBalanceWei;
-  if (minBalance < serviceMin) {
-    fail(
-      `SIG_BIDIRECTIONAL_FUND_MIN_ETH (${formatEther(minBalance)}) is below the service's ` +
-        `SIG_BIDIRECTIONAL_MIN_BALANCE_WEI (${formatEther(serviceMin)}). Addresses between ` +
-        'the two would be refused by the service and ignored by this sweep.'
-    );
-  }
 
   if (topUpTo <= minBalance) {
     fail(

@@ -87,10 +87,11 @@ jobs:
       SIG_BIDIRECTIONAL_PATHS: ${{ inputs.paths || '10' }}
       SIG_BIDIRECTIONAL_PATH_PREFIX: ${{ vars.SIG_BIDIRECTIONAL_PATH_PREFIX || 'load' }}
       SIG_SOL_ROOT_PUBLIC_KEY: ${{ vars.SIG_SOL_ROOT_PUBLIC_KEY }}
-      # Kept level with the scheduled sweep so both hold the same band. A
-      # difference here strands addresses between the two minimums: too poor to
-      # lease, too rich to top up.
-      SIG_BIDIRECTIONAL_FUND_MIN_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_MIN_ETH || '0.002' }}
+      # The floor of the band, and the same figure the load test job below
+      # passes to the service. One variable, so there is no pair to keep level
+      # and no gap for an address to be stranded in: too poor to lease, too
+      # rich to top up.
+      SIG_BIDIRECTIONAL_MIN_BALANCE_WEI: ${{ vars.SIG_BIDIRECTIONAL_MIN_BALANCE_WEI || '2000000000000000' }}
       SIG_BIDIRECTIONAL_FUND_TOPUP_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_TOPUP_ETH || '0.0035' }}
       SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH || '0.02' }}
       SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH || '0.1' }}
@@ -125,7 +126,7 @@ jobs:
             echo '::warning::SIG_BIDIRECTIONAL_FUNDING_SK is not set; skipping the top-up.'
             exit 0
           fi
-          # Only addresses under SIG_BIDIRECTIONAL_FUND_MIN_ETH are topped up,
+          # Only addresses under SIG_BIDIRECTIONAL_MIN_BALANCE_WEI are topped up,
           # so this is already the conditional the run wants: a funded pool
           # prints "every address is above the minimum" and sends nothing.
           if pnpm fund --env "${ENV}" 2>&1 | tee fund.log; then

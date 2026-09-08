@@ -5,7 +5,7 @@ name: Fund Bidirectional Workers
 # address that is short; nothing in the request path holds spending authority.
 #
 # Hourly, because that is what the band can cover. An address holds
-# SIG_BIDIRECTIONAL_FUND_TOPUP_ETH - SIG_BIDIRECTIONAL_FUND_MIN_ETH of
+# SIG_BIDIRECTIONAL_FUND_TOPUP_ETH - SIG_BIDIRECTIONAL_MIN_BALANCE_WEI of
 # headroom, which at the measured gas is ~64 minutes of continuous spend, and a
 # wider band cannot buy a longer gap: a day at that rate needs ~0.034 ETH per
 # address, above the per-address cap and several times the per-run one.
@@ -86,7 +86,10 @@ jobs:
       # 0.0000234 ETH per eth_self_transfer round trip — one hourly sweep, with
       # minutes to spare rather than hours. Widen the band before stretching
       # the schedule, and re-check that against the per-address cap below.
-      SIG_BIDIRECTIONAL_FUND_MIN_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_MIN_ETH || '0.002' }}
+      # The floor of the band, and the figure the service leases against. Read
+      # from the same variable the deployed service reads, so the sweep cannot
+      # top up to a threshold the service disagrees with.
+      SIG_BIDIRECTIONAL_MIN_BALANCE_WEI: ${{ vars.SIG_BIDIRECTIONAL_MIN_BALANCE_WEI || '2000000000000000' }}
       SIG_BIDIRECTIONAL_FUND_TOPUP_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_TOPUP_ETH || '0.0035' }}
       SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH || '0.02' }}
       SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH || '0.1' }}
