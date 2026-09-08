@@ -9,10 +9,12 @@ name: Solana Bidirectional (ad hoc)
 # have to be funded separately. `pnpm fund` derives the same sets from the same
 # key.
 #
-# Funding runs first, in its own job. `pnpm fund` tops up only the addresses
-# already below the minimum, so a healthy pool costs nothing and a depleted one
-# is refilled before any job is submitted rather than starving partway through
-# a run that has already spent an hour.
+# Funding runs first, in its own job, and is sized to the run: the step works
+# out what `jobs` spread over `paths` will cost and passes that as the target,
+# so every address starts able to pay for its share rather than merely being
+# above the floor. A pool already holding it costs nothing. A job count too
+# large to fund trips the spend caps here, in seconds, instead of draining the
+# pool partway through a run that has already spent an hour.
 #
 # Unscheduled on purpose: every job spends gas from addresses only a sweep
 # refills, so a recurring run is a standing cost that should be chosen rather
@@ -112,7 +114,7 @@ jobs:
       # sweep that could not run is one reason they might be short, not a
       # separate verdict on the same question. So this reports why it failed
       # and lets that check decide.
-      - name: Fund any address below the minimum
+      - name: Fund every address for the run about to be driven
         id: fund
         run: |
           set -uo pipefail
@@ -126,10 +128,35 @@ jobs:
             echo '::warning::SIG_BIDIRECTIONAL_FUNDING_SK is not set; skipping the top-up.'
             exit 0
           fi
-          # Only addresses under SIG_BIDIRECTIONAL_MIN_BALANCE_WEI are topped up,
-          # so this is already the conditional the run wants: a funded pool
-          # prints "every address is above the minimum" and sends nothing.
-          if pnpm fund --env "${ENV}" 2>&1 | tee fund.log; then
+          # Sized to this run rather than to the standing band. The scheduled
+          # sweep asks "did anything fall through the floor"; a load test needs
+          # "can every address pay for its share of what I am about to submit",
+          # and an address a hair above the floor answers the first question
+          # yes and the second one no.
+          #
+          #   target = max(band top-up, floor + jobs/paths × gas per run × margin)
+          #
+          # Never below the band the scheduled sweep maintains: a small run
+          # would otherwise refill a depleted address to less than the schedule
+          # keeps it at, and the next sweep would see it above the floor and
+          # leave it there — a load test quietly thinning the pool it borrowed.
+          #
+          # The margin is for gas moving under us between this step and the end
+          # of a run that can last two hours. The per-address and per-run caps
+          # still apply and are not raised here: a job count too large to fund
+          # fails this step in seconds, which is the answer wanted, rather than
+          # draining the pool an hour into the run.
+          # Values passed as argv, not interpolated into the source, and
+          # Decimal rather than float: this figure is spent, and binary
+          # rounding on the way in is not worth the risk of a target the
+          # script then rejects as unparseable.
+          # One line because the surrounding block scalar owns the
+          # indentation: a wrapped program would either leave the block or
+          # arrive at python with a leading indent it rejects.
+          prog='import sys; from decimal import Decimal as D; floor = D(sys.argv[1]) / D(10) ** 18; per_address = -(-int(sys.argv[2]) // int(sys.argv[3])); need = per_address * D(sys.argv[4]) * D(sys.argv[5]); print(max(floor + need, D(sys.argv[6])).quantize(D("1e-18")))'
+          target=$(python3 -c "${prog}" "${SIG_BIDIRECTIONAL_MIN_BALANCE_WEI}" "${JOBS}" "${PATHS}" "${GAS_PER_RUN_ETH}" "${GAS_MARGIN}" "${SIG_BIDIRECTIONAL_FUND_TOPUP_ETH}")
+          echo "Funding ${PATHS} address(es) to ${target} ETH for ${JOBS} job(s)."
+          if pnpm fund --env "${ENV}" --topup "${target}" 2>&1 | tee fund.log; then
             echo 'result=ok' >> "${GITHUB_OUTPUT}"
           else
             echo 'result=failed' >> "${GITHUB_OUTPUT}"
@@ -140,6 +167,13 @@ jobs:
           fi
         env:
           ENV: ${{ inputs.env || 'testnet' }}
+          JOBS: ${{ inputs.jobs || '50' }}
+          PATHS: ${{ inputs.paths || '10' }}
+          # Measured for eth_self_transfer. erc20_zero_transfer costs more, so
+          # this is the floor of the two and the margin absorbs the difference;
+          # re-measure and raise it if that stops being true.
+          GAS_PER_RUN_ETH: ${{ vars.SIG_BIDIRECTIONAL_GAS_PER_RUN_ETH || '0.0000234' }}
+          GAS_MARGIN: ${{ vars.SIG_BIDIRECTIONAL_GAS_MARGIN || '2' }}
 
   loadtest:
     needs: fund

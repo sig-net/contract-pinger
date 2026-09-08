@@ -223,6 +223,17 @@ widening the band: covering a day at that rate needs about 0.034 ETH per
 address, above the per-address cap and several times the per-run one.
 Re-measure when the mode or Sepolia gas moves.
 
+`pnpm fund` maintains that band: it tops up whatever fell below the floor and
+leaves the rest alone, so an hourly sweep over a healthy pool sends nothing.
+Passing `--topup <eth>` asks for something different — every address at that
+figure — so the target becomes the trigger too, and an address sitting just
+above the floor is topped up rather than skipped. The ad hoc load test uses
+this to size funding to the run it is about to drive, from `jobs`, `paths` and
+the measured gas per round trip, floored at the band so a small run cannot
+leave the pool thinner than the schedule keeps it. The per-address and per-run
+caps are unchanged, so a job count too large to fund fails before anything is
+sent rather than partway through.
+
 The floor of the band is `SIG_BIDIRECTIONAL_MIN_BALANCE_WEI` — one variable,
 read by both the service that refuses to lease below it and the sweep that tops
 up below it. There is deliberately no separate funding minimum: a pair of them
