@@ -116,18 +116,17 @@ const schema = z.object({
   SIG_BIDIRECTIONAL_ETH_CONFIRM_TIMEOUT_MS: integer(600_000),
   SIG_BIDIRECTIONAL_CONFIRMATIONS: integer(2),
 
-  // Read-only in the service: it reports balances and refuses to lease an
-  // address below this, but never spends. Topping up is scripts/fund-workers.
+  // The floor of the band, and the only minimum there is. The service reports
+  // balances and refuses to lease an address below this but never spends;
+  // scripts/fund-workers tops up every address below it. One variable rather
+  // than one per reader, because two would be two chances to disagree and the
+  // disagreement is silent: an address between a lower sweep threshold and a
+  // higher service floor is unusable and never refilled, and the pool shrinks
+  // by one address with nothing reporting a fault.
   SIG_BIDIRECTIONAL_MIN_BALANCE_WEI: wei('2000000000000000'),
 
   // Read only by scripts/fund-workers, but validated here so the sweep and the
-  // service cannot hold different ideas of the same setting — which is how an
-  // address ends up too poor for the service to lease and too rich for the
-  // sweep to notice.
-  SIG_BIDIRECTIONAL_FUND_MIN_ETH: z
-    .string()
-    .default('0.002')
-    .refine(v => /^\d+(\.\d+)?$/.test(v), 'must be a decimal number of ETH'),
+  // service cannot hold different ideas of the same setting.
   SIG_BIDIRECTIONAL_FUND_TOPUP_ETH: z
     .string()
     .default('0.0035')
@@ -140,9 +139,16 @@ const schema = z.object({
     .string()
     .default('0.1')
     .refine(v => /^\d+(\.\d+)?$/.test(v), 'must be a decimal number of ETH'),
+  // A floor beneath which the wallet stops spending, not a gas budget: the
+  // sweep estimates its own fees and requires `total + gas + reserve`, so
+  // whatever is set here is withheld on top of the gas already covered. Sized
+  // to leave the next sweep able to pay its way — ten transfers at ~24 gwei,
+  // well above Sepolia's usual — rather than to park a balance. Set it above
+  // what a full sweep sends and the wallet refuses to fund a pool it can
+  // plainly afford, which reads as an empty wallet and is not one.
   SIG_BIDIRECTIONAL_FUND_RESERVE_ETH: z
     .string()
-    .default('0.02')
+    .default('0.005')
     .refine(v => /^\d+(\.\d+)?$/.test(v), 'must be a decimal number of ETH'),
   SIG_BIDIRECTIONAL_FUNDING_SK: z.string().optional(),
   SIG_BIDIRECTIONAL_REQUESTER_PUBKEY: z.string().optional(),
@@ -224,7 +230,6 @@ export const env = {
     key: parsed.SIG_BIDIRECTIONAL_FUNDING_SK,
     requesterPubkey: parsed.SIG_BIDIRECTIONAL_REQUESTER_PUBKEY,
     serviceUrl: parsed.SIG_BIDIRECTIONAL_SERVICE_URL,
-    minEth: parsed.SIG_BIDIRECTIONAL_FUND_MIN_ETH,
     topUpEth: parsed.SIG_BIDIRECTIONAL_FUND_TOPUP_ETH,
     maxPerAddressEth: parsed.SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH,
     maxPerRunEth: parsed.SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH,

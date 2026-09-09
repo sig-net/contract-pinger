@@ -203,6 +203,29 @@ describe('WorkerPool', () => {
     pool.setBalance('load-1', 0n, 1n);
 
     expect(pool.acquire().path).toBe('load-2');
+    expect(() => pool.acquire()).toThrowError(NoWorkerAvailableError);
+  });
+
+  it('reports a partly funded pool as busy, so the caller queues for it', () => {
+    // The reason decides whether acquireWithin waits. With the only funded
+    // address leased, waiting is exactly right — it frees in seconds — and
+    // calling this `all_underfunded` because two dry addresses happen to sit
+    // idle fails every job in a pool that was one release from serving them.
+    pool.setBalance('load-0', 0n, 1n);
+    pool.setBalance('load-1', 0n, 1n);
+    pool.acquire();
+
+    try {
+      pool.acquire();
+      throw new Error('expected acquire to throw');
+    } catch (error) {
+      expect((error as NoWorkerAvailableError).reason).toBe('all_busy');
+    }
+  });
+
+  it('reports an entirely dry pool as underfunded, since waiting cannot help', () => {
+    pool.all().forEach(w => pool.setBalance(w.path, 0n, 1n));
+
     try {
       pool.acquire();
       throw new Error('expected acquire to throw');

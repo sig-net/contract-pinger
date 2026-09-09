@@ -217,9 +217,28 @@ runs of headroom = (topup - min) / gas per run
 ```
 
 At a measured 0.0000234 ETH per `eth_self_transfer` round trip and 10 jobs/min
-spread over 10 addresses, the 0.002 → 0.0035 default gives about 64 minutes —
-four missed fifteen-minute sweeps. Re-measure when the mode or Sepolia gas
-moves.
+spread over 10 addresses, the 0.002 → 0.0035 default gives about 64 minutes,
+which is what sets the hourly sweep. Stretching the schedule is not a matter of
+widening the band: covering a day at that rate needs about 0.034 ETH per
+address, above the per-address cap and several times the per-run one.
+Re-measure when the mode or Sepolia gas moves.
+
+`pnpm fund` maintains that band: it tops up whatever fell below the floor and
+leaves the rest alone, so an hourly sweep over a healthy pool sends nothing.
+Passing `--topup <eth>` asks for something different — every address at that
+figure — so the target becomes the trigger too, and an address sitting just
+above the floor is topped up rather than skipped. The ad hoc load test uses
+this to size funding to the run it is about to drive, from `jobs`, `paths` and
+the measured gas per round trip, floored at the band so a small run cannot
+leave the pool thinner than the schedule keeps it. The per-address and per-run
+caps are unchanged, so a job count too large to fund fails before anything is
+sent rather than partway through.
+
+The floor of the band is `SIG_BIDIRECTIONAL_MIN_BALANCE_WEI` — one variable,
+read by both the service that refuses to lease below it and the sweep that tops
+up below it. There is deliberately no separate funding minimum: a pair of them
+strands any address that lands between the two, unusable and never refilled,
+with nothing reporting a fault.
 
 An address is released back to the pool once its transaction confirms, not when
 the job finishes: the nonce is spent at mining time, long before the MPC

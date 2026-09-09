@@ -94,11 +94,20 @@ export class WorkerPool {
       w => !w.busy && !w.underfunded && w.pendingNonce === undefined
     );
     if (!candidate) {
-      const anyIdle = this.workers.some(
-        w => !w.busy && w.pendingNonce === undefined
+      // The reason decides whether the caller waits, so it answers exactly
+      // one question: can waiting help? No funded idle worker exists or we
+      // would have returned it, so waiting helps only if a funded one is
+      // occupied and will come back.
+      //
+      // Asking instead whether any worker is idle conflates the two in a
+      // partly funded pool: an idle address with no gas would report
+      // `all_underfunded` while funded addresses were a second from freeing
+      // up, turning pool pressure back into the cliff this is meant to queue.
+      const willFreeUp = this.workers.some(
+        w => !w.underfunded && (w.busy || w.pendingNonce !== undefined)
       );
       throw new NoWorkerAvailableError(
-        anyIdle ? 'all_underfunded' : 'all_busy'
+        willFreeUp ? 'all_busy' : 'all_underfunded'
       );
     }
     candidate.busy = true;

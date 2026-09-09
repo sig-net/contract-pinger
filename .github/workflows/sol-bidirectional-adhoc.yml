@@ -9,6 +9,13 @@ name: Solana Bidirectional (ad hoc)
 # have to be funded separately. `pnpm fund` derives the same sets from the same
 # key.
 #
+# Funding runs first, in its own job, and is sized to the run: the step works
+# out what `jobs` spread over `paths` will cost and passes that as the target,
+# so every address starts able to pay for its share rather than merely being
+# above the floor. A pool already holding it costs nothing. A job count too
+# large to fund trips the spend caps here, in seconds, instead of draining the
+# pool partway through a run that has already spent an hour.
+#
 # Unscheduled on purpose: every job spends gas from addresses only a sweep
 # refills, so a recurring run is a standing cost that should be chosen rather
 # than inherited.
@@ -41,6 +48,11 @@ on:
         required: false
         default: '10'
         type: string
+      fund:
+        description: Top up any address below the minimum before driving load
+        required: false
+        default: true
+        type: boolean
 
 permissions:
   contents: read
@@ -52,7 +64,119 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Separate from the load test so the two hold different locks. This job takes
+  # the scheduled sweep's concurrency group — both spend from the same wallet,
+  # and two senders racing one nonce leaves a stuck transaction — while the load
+  # test below runs outside it. Putting the group on the whole workflow instead
+  # would block every scheduled sweep for the two hours a run can last.
+  fund:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: Pinger Test ENV
+    concurrency:
+      group: fund-bidirectional-workers
+      cancel-in-progress: false
+    outputs:
+      result: ${{ steps.fund.outputs.result }}
+    env:
+      SIG_ETH_RPC_URL_SEPOLIA: ${{ secrets.SIG_ETH_RPC_URL_SEPOLIA }}
+      SIG_SOL_RPC_URL_DEV: ${{ secrets.SIG_SOL_RPC_URL_DEV }}
+      SIG_SOL_SK: ${{ secrets.SIG_SOL_SK }}
+      SIG_BIDIRECTIONAL_FUNDING_SK: ${{ secrets.SIG_BIDIRECTIONAL_FUNDING_SK }}
+      # The address set is a function of these four. They are repeated verbatim
+      # on the load test job below, because funding a set the run does not use
+      # is silent: the sweep reports success and every job still starves.
+      SIG_BIDIRECTIONAL_PATHS: ${{ inputs.paths || '10' }}
+      SIG_BIDIRECTIONAL_PATH_PREFIX: ${{ vars.SIG_BIDIRECTIONAL_PATH_PREFIX || 'load' }}
+      SIG_SOL_ROOT_PUBLIC_KEY: ${{ vars.SIG_SOL_ROOT_PUBLIC_KEY }}
+      # The floor of the band, and the same figure the load test job below
+      # passes to the service. One variable, so there is no pair to keep level
+      # and no gap for an address to be stranded in: too poor to lease, too
+      # rich to top up.
+      SIG_BIDIRECTIONAL_MIN_BALANCE_WEI: ${{ vars.SIG_BIDIRECTIONAL_MIN_BALANCE_WEI || '2000000000000000' }}
+      SIG_BIDIRECTIONAL_FUND_TOPUP_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_TOPUP_ETH || '0.0035' }}
+      SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH || '0.02' }}
+      SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH || '0.1' }}
+      SIG_BIDIRECTIONAL_FUND_RESERVE_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_RESERVE_ETH || '0.005' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.14.0'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install
+
+      # Best-effort by design. The authoritative go/no-go is the balance check
+      # on the load test job, which reads what the addresses actually hold; a
+      # sweep that could not run is one reason they might be short, not a
+      # separate verdict on the same question. So this reports why it failed
+      # and lets that check decide.
+      - name: Fund every address for the run about to be driven
+        id: fund
+        run: |
+          set -uo pipefail
+          if [ "${{ inputs.fund }}" = "false" ]; then
+            echo 'result=skipped (not requested)' >> "${GITHUB_OUTPUT}"
+            echo 'Funding not requested; addresses are used as they stand.'
+            exit 0
+          fi
+          if [ -z "${SIG_BIDIRECTIONAL_FUNDING_SK:-}" ]; then
+            echo 'result=skipped (no funding key)' >> "${GITHUB_OUTPUT}"
+            echo '::warning::SIG_BIDIRECTIONAL_FUNDING_SK is not set; skipping the top-up.'
+            exit 0
+          fi
+          # Sized to this run rather than to the standing band. The scheduled
+          # sweep asks "did anything fall through the floor"; a load test needs
+          # "can every address pay for its share of what I am about to submit",
+          # and an address a hair above the floor answers the first question
+          # yes and the second one no.
+          #
+          #   target = max(band top-up, floor + jobs/paths × gas per run × margin)
+          #
+          # Never below the band the scheduled sweep maintains: a small run
+          # would otherwise refill a depleted address to less than the schedule
+          # keeps it at, and the next sweep would see it above the floor and
+          # leave it there — a load test quietly thinning the pool it borrowed.
+          #
+          # The margin is for gas moving under us between this step and the end
+          # of a run that can last two hours. The per-address and per-run caps
+          # still apply and are not raised here: a job count too large to fund
+          # fails this step in seconds, which is the answer wanted, rather than
+          # draining the pool an hour into the run.
+          # Values passed as argv, not interpolated into the source, and
+          # Decimal rather than float: this figure is spent, and binary
+          # rounding on the way in is not worth the risk of a target the
+          # script then rejects as unparseable.
+          # One line because the surrounding block scalar owns the
+          # indentation: a wrapped program would either leave the block or
+          # arrive at python with a leading indent it rejects.
+          prog='import sys; from decimal import Decimal as D; floor = D(sys.argv[1]) / D(10) ** 18; per_address = -(-int(sys.argv[2]) // int(sys.argv[3])); need = per_address * D(sys.argv[4]) * D(sys.argv[5]); print(max(floor + need, D(sys.argv[6])).quantize(D("1e-18")))'
+          target=$(python3 -c "${prog}" "${SIG_BIDIRECTIONAL_MIN_BALANCE_WEI}" "${JOBS}" "${PATHS}" "${GAS_PER_RUN_ETH}" "${GAS_MARGIN}" "${SIG_BIDIRECTIONAL_FUND_TOPUP_ETH}")
+          echo "Funding ${PATHS} address(es) to ${target} ETH for ${JOBS} job(s)."
+          if pnpm fund --env "${ENV}" --topup "${target}" 2>&1 | tee fund.log; then
+            echo 'result=ok' >> "${GITHUB_OUTPUT}"
+          else
+            echo 'result=failed' >> "${GITHUB_OUTPUT}"
+            # The script's own reason, not pnpm's exit-code wrapper, which is
+            # the last line and says nothing about why.
+            reason=$(grep '✗' fund.log | tail -1 || true)
+            echo "::warning::Top-up failed: ${reason:-see the step log}"
+          fi
+        env:
+          ENV: ${{ inputs.env || 'testnet' }}
+          JOBS: ${{ inputs.jobs || '50' }}
+          PATHS: ${{ inputs.paths || '10' }}
+          # Measured for eth_self_transfer. erc20_zero_transfer costs more, so
+          # this is the floor of the two and the margin absorbs the difference;
+          # re-measure and raise it if that stops being true.
+          GAS_PER_RUN_ETH: ${{ vars.SIG_BIDIRECTIONAL_GAS_PER_RUN_ETH || '0.0000234' }}
+          GAS_MARGIN: ${{ vars.SIG_BIDIRECTIONAL_GAS_MARGIN || '2' }}
+
   loadtest:
+    needs: fund
     runs-on: ubuntu-latest
     # Submission is bounded by the arrival-rate limit and the last job then
     # waits out Ethereum finality: roughly `jobs / rate` minutes plus forty.
@@ -66,7 +190,12 @@ jobs:
       SIG_ETH_RPC_URL_SEPOLIA: ${{ secrets.SIG_ETH_RPC_URL_SEPOLIA }}
       SIG_SOL_RPC_URL_DEV: ${{ secrets.SIG_SOL_RPC_URL_DEV }}
       SIG_SOL_SK: ${{ secrets.SIG_SOL_SK }}
+      # Verbatim from the fund job above: these four decide which addresses are
+      # derived, and the two jobs have to land on the same set.
       SIG_BIDIRECTIONAL_PATHS: ${{ inputs.paths || '10' }}
+      SIG_BIDIRECTIONAL_PATH_PREFIX: ${{ vars.SIG_BIDIRECTIONAL_PATH_PREFIX || 'load' }}
+      SIG_SOL_ROOT_PUBLIC_KEY: ${{ vars.SIG_SOL_ROOT_PUBLIC_KEY }}
+      SIG_BIDIRECTIONAL_MIN_BALANCE_WEI: ${{ vars.SIG_BIDIRECTIONAL_MIN_BALANCE_WEI || '2000000000000000' }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -110,8 +239,11 @@ jobs:
           cat pinger.log
           exit 1
 
-      # Reports each address and its balance before anything is spent, so a run
-      # that cannot broadcast says so now rather than after submitting jobs.
+      # The authoritative check, and the only one that reads what the addresses
+      # actually hold rather than what a sweep believed it sent. Runs after the
+      # top-up so it reports the balances the run will really spend from, and
+      # still fails the run when the pool is dry — a top-up that was skipped or
+      # refused is not a reason to submit jobs that cannot broadcast.
       - name: Check worker funding
         run: |
           set -euo pipefail
@@ -124,15 +256,24 @@ jobs:
           short=$(jq '[.workers[] | select(.underfunded)] | length' workers.json)
           total=$(jq '.workers | length' workers.json)
           echo "${short}/${total} addresses below the minimum"
-          if [ "${short}" -eq "${total}" ]; then
-            echo "::error::Every address is underfunded. Fund the addresses above, or run Fund Bidirectional Workers."
-            exit 1
-          fi
+
+          # Every address, not merely one: the top-up has already run, so an
+          # address still short means it could not be fixed — a dry wallet or a
+          # transfer that failed — and the next run would meet the same thing.
+          #
+          # A partly funded pool is also not the test that was asked for. The
+          # path count sets concurrency, so running 50 jobs across three
+          # addresses instead of ten measures a narrower pool at a lower
+          # arrival rate, under a heading that says otherwise.
           if [ "${short}" -gt 0 ]; then
-            echo "::warning::${short} address(es) underfunded; throughput is limited to the rest"
+            jq -r '.workers[] | select(.underfunded)
+                   | "::error::underfunded: \(.path) \(.address) holds \(.balanceWei) wei"' workers.json
+            echo "::error::${short}/${total} addresses are below the minimum after the top-up (${FUND_RESULT}). Fund them, then re-run."
+            exit 1
           fi
         env:
           ENV: ${{ inputs.env || 'testnet' }}
+          FUND_RESULT: ${{ needs.fund.outputs.result }}
 
       # The driver exits non-zero if any job failed, so a single MPC timeout in
       # fifty reds the run. Deliberate for an on-request test that a person
@@ -164,6 +305,7 @@ jobs:
             echo "- Network: \`${{ inputs.env || 'testnet' }}\`"
             echo "- Mode: \`${{ inputs.mode || 'eth_self_transfer' }}\`"
             echo "- Jobs: \`${{ inputs.jobs || '50' }}\` across \`${{ inputs.paths || '10' }}\` addresses"
+            echo "- Top-up: \`${{ needs.fund.outputs.result }}\`"
             echo
             if [ -f loadtest.log ]; then
               echo '```'

@@ -10,6 +10,13 @@
  *   pnpm fund --env dev,testnet          # one run, one spend cap
  *   pnpm fund --env testnet --dry-run
  *   pnpm fund --env testnet --url http://localhost:3001   # cross-check first
+ *   pnpm fund --env testnet --topup 0.006   # every address to 0.006, not just
+ *                                           # the ones under the floor
+ *
+ * Without --topup this maintains a band: top up whatever fell below
+ * SIG_BIDIRECTIONAL_MIN_BALANCE_WEI, to SIG_BIDIRECTIONAL_FUND_TOPUP_ETH. With
+ * it, the target becomes the trigger too, so every address ends the run at the
+ * figure given — which is what a caller about to spend a known amount wants.
  *
  * Requires SIG_BIDIRECTIONAL_FUNDING_SK in the environment. Never pass a key
  * as an argument: argv is visible in `ps` and shell history.
@@ -227,7 +234,10 @@ const main = async () => {
   //
   // At the measured 0.0000234 ETH for eth_self_transfer and 10 jobs/min spread
   // over 10 addresses — one run per address per minute — the 0.002/0.0035
-  // default gives ~64 minutes, or four missed fifteen-minute sweeps. Re-measure
+  // default gives ~64 minutes, which is one hourly sweep plus a few minutes.
+  // That is the whole reason the schedule is hourly: a wider band cannot buy a
+  // longer gap, because covering a day at this rate needs ~0.034 ETH/address,
+  // above the per-address cap and several times the per-run one. Re-measure
   // when the transaction mode or Sepolia gas moves; these are variables, not
   // constants, precisely because that number is not fixed.
   // Defaults come from the shared schema, so a value set for the service is
@@ -235,27 +245,26 @@ const main = async () => {
   // the addresses derived from them would differ.
   const expectedWorkers = Number(arg('paths', String(env.bidirectional.paths)));
   const pathPrefix = env.bidirectional.pathPrefix;
-  const minBalance = parseEther(arg('min', env.funding.minEth));
-  const topUpTo = parseEther(arg('topup', env.funding.topUpEth));
+  // The same figure the service leases against, read from the same variable
+  // rather than a second one kept level by hand. Not overridable per-run: an
+  // override is how the two drift apart for the length of a sweep, and an
+  // address stranded between the two figures is not visible from either side.
+  const minBalance = env.bidirectional.minBalanceWei;
+
+  // An explicit --topup changes what the sweep is being asked for, not just
+  // how high it fills. The scheduled sweep maintains a band: refill what fell
+  // through the floor, and leave everything else alone so an hourly run does
+  // not dust ten addresses for a few wei each. A caller naming a target wants
+  // the other thing — every address at that figure before something spends
+  // against it — and for that the floor is the wrong trigger, since an address
+  // sitting just above it is above the minimum and nowhere near the target.
+  const requestedTopUp = arg('topup');
+  const topUpTo = parseEther(requestedTopUp ?? env.funding.topUpEth);
+  const topUpBelow = requestedTopUp ? topUpTo : minBalance;
   const maxPerAddress = parseEther(env.funding.maxPerAddressEth);
   const maxPerRun = parseEther(env.funding.maxPerRunEth);
   const reserve = parseEther(env.funding.reserveEth);
   const dryRun = flag('dry-run');
-
-  // The service refuses to lease below SIG_BIDIRECTIONAL_MIN_BALANCE_WEI. If
-  // this sweep only tops up below some lower figure, an address between the two
-  // is stranded — unusable and never refilled — and the pool quietly shrinks.
-  // Read through the service's own schema rather than re-parsed here: two
-  // readings of the same variable are two chances to disagree about its
-  // default, and this comparison exists precisely to catch a disagreement.
-  const serviceMin = env.bidirectional.minBalanceWei;
-  if (minBalance < serviceMin) {
-    fail(
-      `SIG_BIDIRECTIONAL_FUND_MIN_ETH (${formatEther(minBalance)}) is below the service's ` +
-        `SIG_BIDIRECTIONAL_MIN_BALANCE_WEI (${formatEther(serviceMin)}). Addresses between ` +
-        'the two would be refused by the service and ignored by this sweep.'
-    );
-  }
 
   if (topUpTo <= minBalance) {
     fail(
@@ -335,7 +344,11 @@ const main = async () => {
   );
   console.log(`funding from: ${account.address}`);
   console.log(
-    `band        : ${formatEther(minBalance)} → ${formatEther(topUpTo)} ETH\n`
+    `band        : ${formatEther(topUpBelow)} → ${formatEther(topUpTo)} ETH` +
+      (requestedTopUp
+        ? '  (--topup: filling every address to the target)'
+        : '') +
+      '\n'
   );
 
   // --- decide -------------------------------------------------------------
@@ -344,17 +357,21 @@ const main = async () => {
   );
   const plan = workers
     .map((w, i) => ({ ...w, balance: balances[i], top: topUpTo - balances[i] }))
-    .filter(w => w.balance < minBalance);
+    .filter(w => w.balance < topUpBelow);
 
   workers.forEach((w, i) => {
-    const short = balances[i] < minBalance ? '  ← short' : '';
+    const short = balances[i] < topUpBelow ? '  ← short' : '';
     console.log(
       `  ${w.env.padEnd(8)} ${w.path.padEnd(8)} ${w.address}  ${formatEther(balances[i])} ETH${short}`
     );
   });
 
   if (plan.length === 0) {
-    console.log('\n✓ every address is above the minimum');
+    console.log(
+      requestedTopUp
+        ? `\n✓ every address already holds the ${formatEther(topUpTo)} ETH target`
+        : '\n✓ every address is above the minimum'
+    );
     return;
   }
 
@@ -418,7 +435,10 @@ const main = async () => {
   const after = await Promise.all(
     workers.map(w => client.getBalance({ address: w.address }))
   );
-  const stillShort = workers.filter((_, i) => after[i] < minBalance);
+  // Checked against whatever was asked for, not against the floor: a run that
+  // named a target and got the floor is short, and reporting it as funded is
+  // how the caller finds out by running out.
+  const stillShort = workers.filter((_, i) => after[i] < topUpBelow);
 
   const remaining = await client.getBalance({ address: account.address });
   const perRunBurn = topUpTo - minBalance;
