@@ -129,7 +129,7 @@ const schema = z.object({
   // service cannot hold different ideas of the same setting.
   SIG_BIDIRECTIONAL_FUND_TOPUP_ETH: z
     .string()
-    .default('0.0035')
+    .default('0.006')
     .refine(v => /^\d+(\.\d+)?$/.test(v), 'must be a decimal number of ETH'),
   SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH: z
     .string()

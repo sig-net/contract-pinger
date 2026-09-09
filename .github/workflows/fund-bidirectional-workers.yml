@@ -6,9 +6,10 @@ name: Fund Bidirectional Workers
 #
 # Hourly, because that is what the band can cover. An address holds
 # SIG_BIDIRECTIONAL_FUND_TOPUP_ETH - SIG_BIDIRECTIONAL_MIN_BALANCE_WEI of
-# headroom, which at the measured gas is ~64 minutes of continuous spend, and a
-# wider band cannot buy a longer gap: a day at that rate needs ~0.034 ETH per
-# address, above the per-address cap and several times the per-run one.
+# headroom, which at twice the measured gas is ~85 minutes of continuous spend
+# at the service's 10/min cap. A wider band still cannot buy a whole day: that
+# needs ~0.067 ETH per address, above the per-address cap and well past the
+# per-run one.
 #
 # The ad hoc load test tops up the addresses it is about to use before it uses
 # them, so a run does not depend on this timer to start. What it does depend on
@@ -87,15 +88,21 @@ jobs:
       #
       #   runs of headroom = (topup - min) / gas per run
       #
-      # The defaults give ~64 minutes at 10 jobs/min against a measured
-      # 0.0000234 ETH per eth_self_transfer round trip — one hourly sweep, with
-      # minutes to spare rather than hours. Widen the band before stretching
-      # the schedule, and re-check that against the per-address cap below.
+      # The 0.004 band gives ~85 minutes at 10 jobs/min against twice the
+      # measured 0.0000234 ETH per eth_self_transfer round trip — one hourly
+      # sweep with 25 minutes to spare. The measured figure is doubled on
+      # purpose: it was taken at one gas price, and a band that only just
+      # covers the gap starves the pool the first time the price moves.
+      #
+      # What caps the band is the per-run limit, not the per-address one. A
+      # worst-case sweep refills every address on both networks, so
+      # 20 x band must stay under SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH:
+      # 0.08 against 0.1 here. Widen the band before stretching the schedule.
       # The floor of the band, and the figure the service leases against. Read
       # from the same variable the deployed service reads, so the sweep cannot
       # top up to a threshold the service disagrees with.
       SIG_BIDIRECTIONAL_MIN_BALANCE_WEI: ${{ vars.SIG_BIDIRECTIONAL_MIN_BALANCE_WEI || '2000000000000000' }}
-      SIG_BIDIRECTIONAL_FUND_TOPUP_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_TOPUP_ETH || '0.0035' }}
+      SIG_BIDIRECTIONAL_FUND_TOPUP_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_TOPUP_ETH || '0.006' }}
       SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH || '0.02' }}
       SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH || '0.1' }}
       SIG_BIDIRECTIONAL_FUND_RESERVE_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_RESERVE_ETH || '0.005' }}

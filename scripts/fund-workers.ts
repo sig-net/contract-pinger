@@ -232,13 +232,18 @@ const main = async () => {
   //
   //   runs of headroom = (topup - min) / gas per run
   //
-  // At the measured 0.0000234 ETH for eth_self_transfer and 10 jobs/min spread
-  // over 10 addresses — one run per address per minute — the 0.002/0.0035
-  // default gives ~64 minutes, which is one hourly sweep plus a few minutes.
-  // That is the whole reason the schedule is hourly: a wider band cannot buy a
-  // longer gap, because covering a day at this rate needs ~0.034 ETH/address,
-  // above the per-address cap and several times the per-run one. Re-measure
-  // when the transaction mode or Sepolia gas moves; these are variables, not
+  // At twice the measured 0.0000234 ETH for eth_self_transfer and 10 jobs/min
+  // spread over 10 addresses — one run per address per minute — the
+  // 0.002/0.006 default gives ~85 minutes, which is one hourly sweep with 25
+  // minutes to spare. The measurement is doubled because it was taken at one
+  // gas price, and a band that only just covers the gap starves the pool the
+  // first time the price moves.
+  //
+  // Widening it further does not buy a longer schedule: covering a day at this
+  // rate needs ~0.067 ETH/address, above the per-address cap and well past the
+  // per-run one. The per-run cap binds first — a worst-case sweep refills every
+  // address on both networks, so 20 x band must stay under it. Re-measure when
+  // the transaction mode or Sepolia gas moves; these are variables, not
   // constants, precisely because that number is not fixed.
   // Defaults come from the shared schema, so a value set for the service is
   // the same value here — two readings would be two chances to disagree, and

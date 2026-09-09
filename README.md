@@ -216,12 +216,18 @@ sweep, including a late one.
 runs of headroom = (topup - min) / gas per run
 ```
 
-At a measured 0.0000234 ETH per `eth_self_transfer` round trip and 10 jobs/min
-spread over 10 addresses, the 0.002 → 0.0035 default gives about 64 minutes,
-which is what sets the hourly sweep. Stretching the schedule is not a matter of
-widening the band: covering a day at that rate needs about 0.034 ETH per
-address, above the per-address cap and several times the per-run one.
-Re-measure when the mode or Sepolia gas moves.
+At twice a measured 0.0000234 ETH per `eth_self_transfer` round trip and 10
+jobs/min spread over 10 addresses, the 0.002 → 0.006 default gives about 85
+minutes, which is what sets the hourly sweep. The measurement is doubled
+because it was taken at one gas price, and a band that only just covers the
+gap starves the pool the first time the price moves.
+
+Stretching the schedule is not a matter of widening the band further: covering
+a day at that rate needs about 0.067 ETH per address, above the per-address
+cap and well past the per-run one. The band is capped by the per-run limit
+first — a worst-case sweep refills every address on both networks, so twenty
+times the band has to stay under it: 0.08 against 0.1 here. Re-measure when
+the mode or Sepolia gas moves.
 
 `pnpm fund` maintains that band: it tops up whatever fell below the floor and
 leaves the rest alone, so an hourly sweep over a healthy pool sends nothing.
