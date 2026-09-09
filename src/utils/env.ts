@@ -30,6 +30,16 @@ const wei = (fallback: string) =>
     .refine(v => /^\d+$/.test(v), 'must be a whole number of wei')
     .transform(v => BigInt(v));
 
+/**
+ * A decimal amount of ETH. Kept as a string: these figures are spent, and
+ * parsing to a float here would round on the way in.
+ */
+const eth = (fallback: string) =>
+  z
+    .string()
+    .default(fallback)
+    .refine(v => /^\d+(\.\d+)?$/.test(v), 'must be a decimal number of ETH');
+
 const boolish = (fallback: boolean) =>
   z
     .enum(['true', 'false'])
@@ -127,18 +137,27 @@ const schema = z.object({
 
   // Read only by scripts/fund-workers, but validated here so the sweep and the
   // service cannot hold different ideas of the same setting.
-  SIG_BIDIRECTIONAL_FUND_TOPUP_ETH: z
-    .string()
-    .default('0.006')
-    .refine(v => /^\d+(\.\d+)?$/.test(v), 'must be a decimal number of ETH'),
-  SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH: z
-    .string()
-    .default('0.02')
-    .refine(v => /^\d+(\.\d+)?$/.test(v), 'must be a decimal number of ETH'),
-  SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH: z
-    .string()
-    .default('0.1')
-    .refine(v => /^\d+(\.\d+)?$/.test(v), 'must be a decimal number of ETH'),
+  //
+  // The band between the floor above and this ceiling is the headroom an
+  // address has before it needs the next sweep, so it has to absorb the
+  // scheduler running late:
+  //
+  //   minutes of headroom = (topup - min) x paths / (rate x gas per run)
+  //
+  // At twice the measured gas — see SIG_BIDIRECTIONAL_GAS_PER_RUN_ETH — and
+  // the service's 10/min cap over 10 addresses, the 0.002 -> 0.006 band gives
+  // ~85 minutes: one hourly sweep with 25 minutes to spare. The measurement is
+  // doubled because it was taken at one gas price, and a band that only just
+  // covers the gap starves the pool the first time the price moves.
+  //
+  // Widening it does not buy a longer schedule. Covering a whole day needs
+  // ~0.067 ETH per address, above the per-address cap and well past the
+  // per-run one — and the per-run cap binds first, since a worst-case sweep
+  // refills every address on both networks: 20 x band must stay under it,
+  // which is 0.08 against 0.1 here.
+  SIG_BIDIRECTIONAL_FUND_TOPUP_ETH: eth('0.006'),
+  SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH: eth('0.02'),
+  SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH: eth('0.1'),
   // A floor beneath which the wallet stops spending, not a gas budget: the
   // sweep estimates its own fees and requires `total + gas + reserve`, so
   // whatever is set here is withheld on top of the gas already covered. Sized
@@ -146,10 +165,15 @@ const schema = z.object({
   // well above Sepolia's usual — rather than to park a balance. Set it above
   // what a full sweep sends and the wallet refuses to fund a pool it can
   // plainly afford, which reads as an empty wallet and is not one.
-  SIG_BIDIRECTIONAL_FUND_RESERVE_ETH: z
-    .string()
-    .default('0.005')
-    .refine(v => /^\d+(\.\d+)?$/.test(v), 'must be a decimal number of ETH'),
+  SIG_BIDIRECTIONAL_FUND_RESERVE_ETH: eth('0.005'),
+  // What one round trip costs, and the factor the ad hoc top-up multiplies it
+  // by. Measured for eth_self_transfer; erc20_zero_transfer costs more, so
+  // this is the floor of the two and the margin absorbs the difference. The
+  // margin also covers gas moving between sizing a top-up and spending it.
+  // Re-measure when the transaction mode or Sepolia gas moves.
+  SIG_BIDIRECTIONAL_GAS_PER_RUN_ETH: eth('0.0000234'),
+  SIG_BIDIRECTIONAL_GAS_MARGIN: integer(2),
+
   SIG_BIDIRECTIONAL_FUNDING_SK: z.string().optional(),
   SIG_BIDIRECTIONAL_REQUESTER_PUBKEY: z.string().optional(),
   SIG_BIDIRECTIONAL_SERVICE_URL: z.string().url().optional(),
@@ -234,6 +258,8 @@ export const env = {
     maxPerAddressEth: parsed.SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH,
     maxPerRunEth: parsed.SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH,
     reserveEth: parsed.SIG_BIDIRECTIONAL_FUND_RESERVE_ETH,
+    gasPerRunEth: parsed.SIG_BIDIRECTIONAL_GAS_PER_RUN_ETH,
+    gasMargin: parsed.SIG_BIDIRECTIONAL_GAS_MARGIN,
   },
 } as const;
 
