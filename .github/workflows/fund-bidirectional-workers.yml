@@ -4,11 +4,11 @@ name: Fund Bidirectional Workers
 # than inside the service. The pinger reports balances and refuses to lease an
 # address that is short; nothing in the request path holds spending authority.
 #
-# Hourly, because that is what the band can cover. An address holds
+# Hourly, because that is what the band can cover: an address holds
 # SIG_BIDIRECTIONAL_FUND_TOPUP_ETH - SIG_BIDIRECTIONAL_MIN_BALANCE_WEI of
-# headroom, which at the measured gas is ~64 minutes of continuous spend, and a
-# wider band cannot buy a longer gap: a day at that rate needs ~0.034 ETH per
-# address, above the per-address cap and several times the per-run one.
+# headroom, and the defaults are sized in src/utils/env.ts to outlast one
+# sweep at the service's arrival cap. No band buys a whole day, so the
+# schedule cannot be stretched by widening it.
 #
 # The ad hoc load test tops up the addresses it is about to use before it uses
 # them, so a run does not depend on this timer to start. What it does depend on
@@ -75,30 +75,23 @@ jobs:
       # holding a different key; a mismatch then fails the run rather than
       # funding addresses nothing spends from.
       SIG_BIDIRECTIONAL_REQUESTER_PUBKEY: ${{ vars.SIG_BIDIRECTIONAL_REQUESTER_PUBKEY }}
-      SIG_BIDIRECTIONAL_PATHS: ${{ vars.SIG_BIDIRECTIONAL_PATHS || '10' }}
-      SIG_BIDIRECTIONAL_PATH_PREFIX: ${{ vars.SIG_BIDIRECTIONAL_PATH_PREFIX || 'load' }}
+      SIG_BIDIRECTIONAL_PATHS: ${{ vars.SIG_BIDIRECTIONAL_PATHS }}
+      SIG_BIDIRECTIONAL_PATH_PREFIX: ${{ vars.SIG_BIDIRECTIONAL_PATH_PREFIX }}
       # Must match the deployed service. Unset there and unset here both mean
       # "pair the root key to the program address"; set on one side only
       # derives a different address set entirely.
       SIG_SOL_ROOT_PUBLIC_KEY: ${{ vars.SIG_SOL_ROOT_PUBLIC_KEY }}
       # Thresholds are variables, not constants: the right band depends on the
-      # measured gas of the enabled transaction mode and on how long a pool must
-      # survive without a sweep.
-      #
-      #   runs of headroom = (topup - min) / gas per run
-      #
-      # The defaults give ~64 minutes at 10 jobs/min against a measured
-      # 0.0000234 ETH per eth_self_transfer round trip — one hourly sweep, with
-      # minutes to spare rather than hours. Widen the band before stretching
-      # the schedule, and re-check that against the per-address cap below.
-      # The floor of the band, and the figure the service leases against. Read
-      # from the same variable the deployed service reads, so the sweep cannot
-      # top up to a threshold the service disagrees with.
-      SIG_BIDIRECTIONAL_MIN_BALANCE_WEI: ${{ vars.SIG_BIDIRECTIONAL_MIN_BALANCE_WEI || '2000000000000000' }}
-      SIG_BIDIRECTIONAL_FUND_TOPUP_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_TOPUP_ETH || '0.0035' }}
-      SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH || '0.02' }}
-      SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH || '0.1' }}
-      SIG_BIDIRECTIONAL_FUND_RESERVE_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_RESERVE_ETH || '0.005' }}
+      # measured gas of the enabled transaction mode and on how long a pool
+      # must survive without a sweep. Every default below, and the arithmetic
+      # that sizes it, lives in src/utils/env.ts — passed through unset here so
+      # the number is written down once. Setting the variable overrides it.
+      SIG_BIDIRECTIONAL_MIN_BALANCE_WEI: ${{ vars.SIG_BIDIRECTIONAL_MIN_BALANCE_WEI }}
+      SIG_BIDIRECTIONAL_FUND_TOPUP_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_TOPUP_ETH }}
+      SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH }}
+      SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH }}
+      SIG_BIDIRECTIONAL_FUND_RESERVE_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_RESERVE_ETH }}
+
       # Cross-check the derived addresses against the deployed service before
       # spending. Five values must agree across the two — the path count and
       # prefix, the root key, the requester key, and the balance minimum — and

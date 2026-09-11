@@ -213,15 +213,14 @@ Sizing the band: an address needs enough headroom to survive until the next
 sweep, including a late one.
 
 ```
-runs of headroom = (topup - min) / gas per run
+minutes of headroom = (topup - min) x paths / (rate x gas per run)
 ```
 
-At a measured 0.0000234 ETH per `eth_self_transfer` round trip and 10 jobs/min
-spread over 10 addresses, the 0.002 → 0.0035 default gives about 64 minutes,
-which is what sets the hourly sweep. Stretching the schedule is not a matter of
-widening the band: covering a day at that rate needs about 0.034 ETH per
-address, above the per-address cap and several times the per-run one.
-Re-measure when the mode or Sepolia gas moves.
+The defaults, and the arithmetic that sizes them, live beside each other in
+[`src/utils/env.ts`](./src/utils/env.ts) — the only place any of these numbers
+is written down. Everything else, both workflows included, passes the variable
+through unset and takes what the schema resolved. Re-measure the gas figure
+when the transaction mode or Sepolia gas moves, and the band follows from it.
 
 `pnpm fund` maintains that band: it tops up whatever fell below the floor and
 leaves the rest alone, so an hourly sweep over a healthy pool sends nothing.

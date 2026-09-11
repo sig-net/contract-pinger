@@ -86,18 +86,18 @@ jobs:
       # The address set is a function of these four. They are repeated verbatim
       # on the load test job below, because funding a set the run does not use
       # is silent: the sweep reports success and every job still starves.
-      SIG_BIDIRECTIONAL_PATHS: ${{ inputs.paths || '10' }}
-      SIG_BIDIRECTIONAL_PATH_PREFIX: ${{ vars.SIG_BIDIRECTIONAL_PATH_PREFIX || 'load' }}
+      SIG_BIDIRECTIONAL_PATHS: ${{ inputs.paths }}
+      SIG_BIDIRECTIONAL_PATH_PREFIX: ${{ vars.SIG_BIDIRECTIONAL_PATH_PREFIX }}
       SIG_SOL_ROOT_PUBLIC_KEY: ${{ vars.SIG_SOL_ROOT_PUBLIC_KEY }}
       # The floor of the band, and the same figure the load test job below
       # passes to the service. One variable, so there is no pair to keep level
       # and no gap for an address to be stranded in: too poor to lease, too
       # rich to top up.
-      SIG_BIDIRECTIONAL_MIN_BALANCE_WEI: ${{ vars.SIG_BIDIRECTIONAL_MIN_BALANCE_WEI || '2000000000000000' }}
-      SIG_BIDIRECTIONAL_FUND_TOPUP_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_TOPUP_ETH || '0.0035' }}
-      SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH || '0.02' }}
-      SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH || '0.1' }}
-      SIG_BIDIRECTIONAL_FUND_RESERVE_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_RESERVE_ETH || '0.005' }}
+      SIG_BIDIRECTIONAL_MIN_BALANCE_WEI: ${{ vars.SIG_BIDIRECTIONAL_MIN_BALANCE_WEI }}
+      SIG_BIDIRECTIONAL_FUND_TOPUP_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_TOPUP_ETH }}
+      SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH }}
+      SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH }}
+      SIG_BIDIRECTIONAL_FUND_RESERVE_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_RESERVE_ETH }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -114,6 +114,12 @@ jobs:
       # sweep that could not run is one reason they might be short, not a
       # separate verdict on the same question. So this reports why it failed
       # and lets that check decide.
+      # Defaults are written down once, in src/utils/env.ts. Reading them back
+      # is what lets every funding variable above pass through unset.
+      - name: Resolve funding configuration
+        id: config
+        run: pnpm fund:config >> "${GITHUB_OUTPUT}"
+
       - name: Fund every address for the run about to be driven
         id: fund
         run: |
@@ -154,7 +160,7 @@ jobs:
           # indentation: a wrapped program would either leave the block or
           # arrive at python with a leading indent it rejects.
           prog='import sys; from decimal import Decimal as D; floor = D(sys.argv[1]) / D(10) ** 18; per_address = -(-int(sys.argv[2]) // int(sys.argv[3])); need = per_address * D(sys.argv[4]) * D(sys.argv[5]); print(max(floor + need, D(sys.argv[6])).quantize(D("1e-18")))'
-          target=$(python3 -c "${prog}" "${SIG_BIDIRECTIONAL_MIN_BALANCE_WEI}" "${JOBS}" "${PATHS}" "${GAS_PER_RUN_ETH}" "${GAS_MARGIN}" "${SIG_BIDIRECTIONAL_FUND_TOPUP_ETH}")
+          target=$(python3 -c "${prog}" "${FLOOR_WEI}" "${JOBS}" "${PATHS}" "${GAS_PER_RUN_ETH}" "${GAS_MARGIN}" "${BAND_TOPUP_ETH}")
           echo "Funding ${PATHS} address(es) to ${target} ETH for ${JOBS} job(s)."
           if pnpm fund --env "${ENV}" --topup "${target}" 2>&1 | tee fund.log; then
             echo 'result=ok' >> "${GITHUB_OUTPUT}"
@@ -166,14 +172,18 @@ jobs:
             echo "::warning::Top-up failed: ${reason:-see the step log}"
           fi
         env:
-          ENV: ${{ inputs.env || 'testnet' }}
-          JOBS: ${{ inputs.jobs || '50' }}
-          PATHS: ${{ inputs.paths || '10' }}
+          ENV: ${{ inputs.env }}
+          JOBS: ${{ inputs.jobs }}
+          PATHS: ${{ inputs.paths }}
           # Measured for eth_self_transfer. erc20_zero_transfer costs more, so
           # this is the floor of the two and the margin absorbs the difference;
           # re-measure and raise it if that stops being true.
-          GAS_PER_RUN_ETH: ${{ vars.SIG_BIDIRECTIONAL_GAS_PER_RUN_ETH || '0.0000234' }}
-          GAS_MARGIN: ${{ vars.SIG_BIDIRECTIONAL_GAS_MARGIN || '2' }}
+          # Resolved by the schema, so the sizing arithmetic and the sweep
+          # cannot disagree about what a run costs.
+          FLOOR_WEI: ${{ steps.config.outputs.min_balance_wei }}
+          BAND_TOPUP_ETH: ${{ steps.config.outputs.topup_eth }}
+          GAS_PER_RUN_ETH: ${{ steps.config.outputs.gas_per_run_eth }}
+          GAS_MARGIN: ${{ steps.config.outputs.gas_margin }}
 
   loadtest:
     needs: fund
@@ -192,10 +202,10 @@ jobs:
       SIG_SOL_SK: ${{ secrets.SIG_SOL_SK }}
       # Verbatim from the fund job above: these four decide which addresses are
       # derived, and the two jobs have to land on the same set.
-      SIG_BIDIRECTIONAL_PATHS: ${{ inputs.paths || '10' }}
-      SIG_BIDIRECTIONAL_PATH_PREFIX: ${{ vars.SIG_BIDIRECTIONAL_PATH_PREFIX || 'load' }}
+      SIG_BIDIRECTIONAL_PATHS: ${{ inputs.paths }}
+      SIG_BIDIRECTIONAL_PATH_PREFIX: ${{ vars.SIG_BIDIRECTIONAL_PATH_PREFIX }}
       SIG_SOL_ROOT_PUBLIC_KEY: ${{ vars.SIG_SOL_ROOT_PUBLIC_KEY }}
-      SIG_BIDIRECTIONAL_MIN_BALANCE_WEI: ${{ vars.SIG_BIDIRECTIONAL_MIN_BALANCE_WEI || '2000000000000000' }}
+      SIG_BIDIRECTIONAL_MIN_BALANCE_WEI: ${{ vars.SIG_BIDIRECTIONAL_MIN_BALANCE_WEI }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -272,7 +282,7 @@ jobs:
             exit 1
           fi
         env:
-          ENV: ${{ inputs.env || 'testnet' }}
+          ENV: ${{ inputs.env }}
           FUND_RESULT: ${{ needs.fund.outputs.result }}
 
       # The driver exits non-zero if any job failed, so a single MPC timeout in
@@ -283,9 +293,9 @@ jobs:
         run: |
           set -euo pipefail
           pnpm loadtest \
-            --jobs "${{ inputs.jobs || '50' }}" \
-            --env "${{ inputs.env || 'testnet' }}" \
-            --mode "${{ inputs.mode || 'eth_self_transfer' }}" \
+            --jobs "${{ inputs.jobs }}" \
+            --env "${{ inputs.env }}" \
+            --mode "${{ inputs.mode }}" \
             --url "http://localhost:${PORT}" \
             | tee loadtest.log
 
@@ -302,9 +312,9 @@ jobs:
           {
             echo "## Solana Bidirectional (ad hoc)"
             echo
-            echo "- Network: \`${{ inputs.env || 'testnet' }}\`"
-            echo "- Mode: \`${{ inputs.mode || 'eth_self_transfer' }}\`"
-            echo "- Jobs: \`${{ inputs.jobs || '50' }}\` across \`${{ inputs.paths || '10' }}\` addresses"
+            echo "- Network: \`${{ inputs.env }}\`"
+            echo "- Mode: \`${{ inputs.mode }}\`"
+            echo "- Jobs: \`${{ inputs.jobs }}\` across \`${{ inputs.paths }}\` addresses"
             echo "- Top-up: \`${{ needs.fund.outputs.result }}\`"
             echo
             if [ -f loadtest.log ]; then

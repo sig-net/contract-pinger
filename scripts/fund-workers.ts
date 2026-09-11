@@ -10,7 +10,7 @@
  *   pnpm fund --env dev,testnet          # one run, one spend cap
  *   pnpm fund --env testnet --dry-run
  *   pnpm fund --env testnet --url http://localhost:3001   # cross-check first
- *   pnpm fund --env testnet --topup 0.006   # every address to 0.006, not just
+ *   pnpm fund --env testnet --topup 0.01    # every address to 0.01, not just
  *                                           # the ones under the floor
  *
  * Without --topup this maintains a band: top up whatever fell below
@@ -228,18 +228,10 @@ const main = async () => {
   // --- safety limits ------------------------------------------------------
   //
   // The band between min and top-up is the headroom an address has before it
-  // needs the next sweep, so it has to absorb the scheduler running late.
+  // needs the next sweep. How it is sized, and why the schedule follows from
+  // it rather than the other way round, is written down beside the defaults
+  // in src/utils/env.ts.
   //
-  //   runs of headroom = (topup - min) / gas per run
-  //
-  // At the measured 0.0000234 ETH for eth_self_transfer and 10 jobs/min spread
-  // over 10 addresses — one run per address per minute — the 0.002/0.0035
-  // default gives ~64 minutes, which is one hourly sweep plus a few minutes.
-  // That is the whole reason the schedule is hourly: a wider band cannot buy a
-  // longer gap, because covering a day at this rate needs ~0.034 ETH/address,
-  // above the per-address cap and several times the per-run one. Re-measure
-  // when the transaction mode or Sepolia gas moves; these are variables, not
-  // constants, precisely because that number is not fixed.
   // Defaults come from the shared schema, so a value set for the service is
   // the same value here — two readings would be two chances to disagree, and
   // the addresses derived from them would differ.
