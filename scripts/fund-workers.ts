@@ -374,8 +374,11 @@ const main = async () => {
 
   if (total > maxPerRun) {
     fail(
-      `that exceeds the per-run cap of ${formatEther(maxPerRun)} ETH. ` +
-        'Raise SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH deliberately, or fund fewer addresses.'
+      // Self-contained rather than "that exceeds": this goes to stderr and the
+      // total above to stdout, and CI logs do not keep the two in order.
+      `${formatEther(total)} ETH across ${plan.length} address(es) exceeds the ` +
+        `per-run cap of ${formatEther(maxPerRun)} ETH. Raise ` +
+        'SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH deliberately, or fund fewer addresses.'
     );
   }
 

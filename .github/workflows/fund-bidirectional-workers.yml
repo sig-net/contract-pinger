@@ -37,6 +37,21 @@ on:
         required: false
         default: ''
         type: string
+      # The caps exist to stop a mistyped figure, not a deliberate one. A
+      # target that fills every address costs target x addresses, which passes
+      # the per-run cap sized for the band as soon as it rises much above it,
+      # so a manual fill needs a way to raise the cap for that run alone.
+      # Blank keeps the repository variable, or the schema default under it.
+      max_per_run:
+        description: Per-run spend cap in ETH for this run (blank keeps the default)
+        required: false
+        default: ''
+        type: string
+      max_per_address:
+        description: Per-address cap in ETH for this run; topup must not exceed it (blank keeps the default)
+        required: false
+        default: ''
+        type: string
       dry_run:
         description: Report what would be sent, send nothing
         required: false
@@ -86,10 +101,13 @@ jobs:
       # must survive without a sweep. Every default below, and the arithmetic
       # that sizes it, lives in src/utils/env.ts — passed through unset here so
       # the number is written down once. Setting the variable overrides it.
+      # The two caps also take a dispatch input, which wins for that run; a
+      # schedule carries no inputs, so the sweep always runs under the default.
+      # A malformed input fails schema validation before anything is sent.
       SIG_BIDIRECTIONAL_MIN_BALANCE_WEI: ${{ vars.SIG_BIDIRECTIONAL_MIN_BALANCE_WEI }}
       SIG_BIDIRECTIONAL_FUND_TOPUP_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_TOPUP_ETH }}
-      SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH }}
-      SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH }}
+      SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH: ${{ inputs.max_per_address || vars.SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH }}
+      SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH: ${{ inputs.max_per_run || vars.SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH }}
       SIG_BIDIRECTIONAL_FUND_RESERVE_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_RESERVE_ETH }}
 
       # Cross-check the derived addresses against the deployed service before
