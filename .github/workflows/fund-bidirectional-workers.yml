@@ -4,11 +4,12 @@ name: Fund Bidirectional Workers
 # than inside the service. The pinger reports balances and refuses to lease an
 # address that is short; nothing in the request path holds spending authority.
 #
-# Hourly, because that is what the band can cover: an address holds
+# Hourly, though GitHub runs only a fraction of these ticks. Each address holds
 # SIG_BIDIRECTIONAL_FUND_TOPUP_ETH - SIG_BIDIRECTIONAL_MIN_BALANCE_WEI of
-# headroom, and the defaults are sized in src/utils/env.ts to outlast one
-# sweep at the service's arrival cap. No band buys a whole day, so the
-# schedule cannot be stretched by widening it.
+# headroom, and the defaults are sized in src/utils/env.ts so the pool
+# outlasts a day of the scheduled one-a-minute load. A skipped tick then
+# costs nothing, and the hourly cadence only shortens how long a drained pool
+# waits for its refill.
 #
 # The ad hoc load test tops up the addresses it is about to use before it uses
 # them, so a run does not depend on this timer to start. What it does depend on
@@ -39,8 +40,8 @@ on:
         type: string
       # The caps exist to stop a mistyped figure, not a deliberate one. A
       # target that fills every address costs target x addresses, which passes
-      # the per-run cap sized for the band as soon as it rises much above it,
-      # so a manual fill needs a way to raise the cap for that run alone.
+      # the per-run cap sized for the band as soon as it rises above it, so a
+      # manual fill needs a way to raise the cap for that run alone.
       # Blank keeps the repository variable, or the schema default under it.
       max_per_run:
         description: Per-run spend cap in ETH for this run (blank keeps the default)

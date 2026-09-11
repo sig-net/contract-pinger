@@ -138,26 +138,34 @@ const schema = z.object({
   // Read only by scripts/fund-workers, but validated here so the sweep and the
   // service cannot hold different ideas of the same setting.
   //
-  // The band between the floor above and this ceiling is the headroom an
-  // address has before it needs the next sweep, so it has to absorb the
+  // The band between the floor above and this ceiling is the headroom the
+  // pool has before it needs the next sweep, so it has to absorb the
   // scheduler running late:
   //
   //   minutes of headroom = (topup - min) x paths / (rate x gas per run)
   //
-  // At twice the measured gas — see SIG_BIDIRECTIONAL_GAS_PER_RUN_ETH — and
-  // the service's 10/min cap over 10 addresses, the 0.002 -> 0.006 band gives
-  // ~85 minutes: one hourly sweep with 25 minutes to spare. The measurement is
-  // doubled because it was taken at one gas price, and a band that only just
-  // covers the gap starves the pool the first time the price moves.
+  // Pool-wide rather than per address because the service leases the first
+  // idle address: at a job a minute one address carries every job until it
+  // falls through the floor, then the next takes over.
   //
-  // Widening it does not buy a longer schedule. Covering a whole day needs
-  // ~0.067 ETH per address, above the per-address cap and well past the
-  // per-run one — and the per-run cap binds first, since a worst-case sweep
-  // refills every address on both networks: 20 x band must stay under it,
-  // which is 0.08 against 0.1 here.
-  SIG_BIDIRECTIONAL_FUND_TOPUP_ETH: eth('0.006'),
+  // Sized to a day of the scheduled k6 load, one job a minute, rather than to
+  // one sweep interval. GitHub drops most scheduled runs of this workflow —
+  // gaps between sweeps have run to eight hours — so a band that only outlasts
+  // an hour starves the pool whenever the scheduler skips. A day at twice the
+  // measured gas (see SIG_BIDIRECTIONAL_GAS_PER_RUN_ETH) is 1440 x 0.0000468
+  // = ~0.067 ETH, so over 10 addresses (topup - min) >= 0.0067 and the
+  // 0.002 -> 0.009 band gives ~25 hours. At the service's 10/min cap the same
+  // band lasts ~2.5 hours. The measurement is doubled because it was taken at
+  // one gas price, and a band that only just covers the gap starves the pool
+  // the first time the price moves.
+  //
+  // The per-run cap has to admit a worst-case sweep, which fills every address
+  // on both networks from empty: 20 x topup, 0.18 against 0.2 here. Raise the
+  // band and the per-run cap must follow, or the sweep refuses exactly when
+  // the pool most needs it.
+  SIG_BIDIRECTIONAL_FUND_TOPUP_ETH: eth('0.009'),
   SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH: eth('0.02'),
-  SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH: eth('0.1'),
+  SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH: eth('0.2'),
   // A floor beneath which the wallet stops spending, not a gas budget: the
   // sweep estimates its own fees and requires `total + gas + reserve`, so
   // whatever is set here is withheld on top of the gas already covered. Sized

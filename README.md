@@ -234,7 +234,7 @@ caps are unchanged, so a job count too large to fund fails before anything is
 sent rather than partway through.
 
 Those caps are sized for the band, so a manual fill outgrows them quickly:
-`--topup 0.02` across twenty addresses is over 0.3 ETH against a 0.1 cap.
+`--topup 0.02` across twenty addresses is over 0.3 ETH against a 0.2 cap.
 Dispatching the `Fund Bidirectional Workers` workflow by hand takes
 `max_per_run` and `max_per_address` alongside `topup`, raising either cap for
 that run only. The schedule carries no inputs, so the hourly sweep always runs
