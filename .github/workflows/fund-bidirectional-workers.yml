@@ -15,11 +15,12 @@ name: Fund Bidirectional Workers
 # them, so a run does not depend on this timer to start. What it does depend on
 # is a sweep landing mid-run — a run may last hours, longer than the headroom it
 # starts with — and on the deployed service, which shares this address set and
-# has no on-demand path of its own. Against a full pool a sweep sends nothing,
-# so the cadence costs a workflow minute rather than gas.
+# has no on-demand path of its own. A sweep sends only to the addresses that
+# spent since the last one — at a job a minute, usually one — so the cadence
+# costs a transfer or two an hour rather than a refill of the whole pool.
 #
 # What this does not do is watch the funding wallet. The script returns as soon
-# as it finds every address above the floor, and both reads of the wallet — the
+# as it finds every address at the target, and both reads of the wallet — the
 # affordability check and the runway figure — sit on the path that sends. So a
 # quiet hour reports the pool, not what is left to refill it with, and an empty
 # wallet surfaces on the first hour a top-up is actually due.
@@ -34,7 +35,7 @@ on:
         default: dev,testnet
         type: string
       topup:
-        description: Fill every address to this many ETH (blank keeps the band)
+        description: Fill every address to this many ETH (blank keeps the default target)
         required: false
         default: ''
         type: string
@@ -151,10 +152,10 @@ jobs:
         run: |
           set -euo pipefail
           args=(--env "${ENV}")
-          # Blank on the schedule and by default, which is the band: top up
-          # whatever fell below the floor and leave the rest alone. Given a
-          # target, every address below it is filled to it instead — the same
-          # switch the ad hoc load test uses to fund for a specific run.
+          # Blank on the schedule and by default: every address below the
+          # default target is filled to it. Given a figure, that is the target
+          # instead — the same switch the ad hoc load test uses to fund for a
+          # specific run.
           if [ -n "${TOPUP}" ]; then args+=(--topup "${TOPUP}"); fi
           if [ "${DRY_RUN}" = 'true' ]; then args+=(--dry-run); fi
           pnpm fund "${args[@]}"

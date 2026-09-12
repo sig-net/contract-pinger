@@ -10,13 +10,11 @@
  *   pnpm fund --env dev,testnet          # one run, one spend cap
  *   pnpm fund --env testnet --dry-run
  *   pnpm fund --env testnet --url http://localhost:3001   # cross-check first
- *   pnpm fund --env testnet --topup 0.01    # every address to 0.01, not just
- *                                           # the ones under the floor
+ *   pnpm fund --env testnet --topup 0.01    # a different target than the default
  *
- * Without --topup this maintains a band: top up whatever fell below
- * SIG_BIDIRECTIONAL_MIN_BALANCE_WEI, to SIG_BIDIRECTIONAL_FUND_TOPUP_ETH. With
- * it, the target becomes the trigger too, so every address ends the run at the
- * figure given — which is what a caller about to spend a known amount wants.
+ * Fills every address below SIG_BIDIRECTIONAL_FUND_TOPUP_ETH to it, or to the
+ * --topup figure when given. SIG_BIDIRECTIONAL_MIN_BALANCE_WEI is the floor the
+ * service stops leasing at, and bounds how far a pool drains between sweeps.
  *
  * Requires SIG_BIDIRECTIONAL_FUNDING_SK in the environment. Never pass a key
  * as an argument: argv is visible in `ps` and shell history.
@@ -243,16 +241,24 @@ const main = async () => {
   // address stranded between the two figures is not visible from either side.
   const minBalance = env.bidirectional.minBalanceWei;
 
-  // An explicit --topup changes what the sweep is being asked for, not just
-  // how high it fills. The scheduled sweep maintains a band: refill what fell
-  // through the floor, and leave everything else alone so an hourly run does
-  // not dust ten addresses for a few wei each. A caller naming a target wants
-  // the other thing — every address at that figure before something spends
-  // against it — and for that the floor is the wrong trigger, since an address
-  // sitting just above it is above the minimum and nowhere near the target.
+  // The target is the trigger too: every address below it is filled to it.
+  // The default target is sized so that a full pool holds a day of the
+  // scheduled load, and refilling only what fell through the floor left the
+  // pool short of that for as long as its addresses took to drain — a pool
+  // sitting just above the floor everywhere passed a sweep with almost no
+  // headroom. At a job a minute one address spends at a time, so a sweep
+  // tops up the one or two that moved, not all ten.
+  //
+  // --topup only changes the figure, as the ad hoc load test does to fund for
+  // a specific run.
   const requestedTopUp = arg('topup');
   const topUpTo = parseEther(requestedTopUp ?? env.funding.topUpEth);
-  const topUpBelow = requestedTopUp ? topUpTo : minBalance;
+  // What "funded" means once the transfers land. A caller naming a target is
+  // about to spend against it, so falling short of it is a failure. The
+  // scheduled sweep runs beside a live service that may lease an address
+  // between its transfer and this check, landing it a job below the target;
+  // for that caller the floor is what says the pool can still serve.
+  const fundedAt = requestedTopUp ? topUpTo : minBalance;
   const maxPerAddress = parseEther(env.funding.maxPerAddressEth);
   const maxPerRun = parseEther(env.funding.maxPerRunEth);
   const reserve = parseEther(env.funding.reserveEth);
@@ -336,10 +342,8 @@ const main = async () => {
   );
   console.log(`funding from: ${account.address}`);
   console.log(
-    `band        : ${formatEther(topUpBelow)} → ${formatEther(topUpTo)} ETH` +
-      (requestedTopUp
-        ? '  (--topup: filling every address to the target)'
-        : '') +
+    `band        : ${formatEther(minBalance)} → ${formatEther(topUpTo)} ETH` +
+      (requestedTopUp ? '  (--topup target)' : '') +
       '\n'
   );
 
@@ -349,10 +353,10 @@ const main = async () => {
   );
   const plan = workers
     .map((w, i) => ({ ...w, balance: balances[i], top: topUpTo - balances[i] }))
-    .filter(w => w.balance < topUpBelow);
+    .filter(w => w.balance < topUpTo);
 
   workers.forEach((w, i) => {
-    const short = balances[i] < topUpBelow ? '  ← short' : '';
+    const short = balances[i] < topUpTo ? '  ← short' : '';
     console.log(
       `  ${w.env.padEnd(8)} ${w.path.padEnd(8)} ${w.address}  ${formatEther(balances[i])} ETH${short}`
     );
@@ -360,9 +364,7 @@ const main = async () => {
 
   if (plan.length === 0) {
     console.log(
-      requestedTopUp
-        ? `\n✓ every address already holds the ${formatEther(topUpTo)} ETH target`
-        : '\n✓ every address is above the minimum'
+      `\n✓ every address already holds the ${formatEther(topUpTo)} ETH target`
     );
     return;
   }
@@ -430,10 +432,9 @@ const main = async () => {
   const after = await Promise.all(
     workers.map(w => client.getBalance({ address: w.address }))
   );
-  // Checked against whatever was asked for, not against the floor: a run that
-  // named a target and got the floor is short, and reporting it as funded is
-  // how the caller finds out by running out.
-  const stillShort = workers.filter((_, i) => after[i] < topUpBelow);
+  // Against `fundedAt`, not the target: see where it is set for why the two
+  // callers differ.
+  const stillShort = workers.filter((_, i) => after[i] < fundedAt);
 
   const remaining = await client.getBalance({ address: account.address });
   const perRunBurn = topUpTo - minBalance;

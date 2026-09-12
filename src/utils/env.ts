@@ -127,12 +127,14 @@ const schema = z.object({
   SIG_BIDIRECTIONAL_CONFIRMATIONS: integer(2),
 
   // The floor of the band, and the only minimum there is. The service reports
-  // balances and refuses to lease an address below this but never spends;
-  // scripts/fund-workers tops up every address below it. One variable rather
-  // than one per reader, because two would be two chances to disagree and the
-  // disagreement is silent: an address between a lower sweep threshold and a
-  // higher service floor is unusable and never refilled, and the pool shrinks
-  // by one address with nothing reporting a fault.
+  // balances and refuses to lease an address below this but never spends.
+  // scripts/fund-workers refills at the top-up target, above this, and checks
+  // a scheduled sweep succeeded against it. One variable rather than one per
+  // reader, because two would be two chances to disagree and the disagreement
+  // is silent: an address between a lower sweep threshold and a higher
+  // service floor is unusable and never refilled, and the pool shrinks by one
+  // address with nothing reporting a fault. The target is safe where a second
+  // minimum would not be: it sits above the floor, which the script enforces.
   SIG_BIDIRECTIONAL_MIN_BALANCE_WEI: wei('2000000000000000'),
 
   // Read only by scripts/fund-workers, but validated here so the sweep and the
