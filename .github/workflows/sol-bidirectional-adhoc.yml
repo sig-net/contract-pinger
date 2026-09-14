@@ -135,17 +135,16 @@ jobs:
             exit 0
           fi
           # Sized to this run rather than to the standing band. The scheduled
-          # sweep asks "did anything fall through the floor"; a load test needs
-          # "can every address pay for its share of what I am about to submit",
-          # and an address a hair above the floor answers the first question
-          # yes and the second one no.
+          # sweep fills to a day of one-a-minute load; a load test needs "can
+          # every address pay for its share of what I am about to submit",
+          # which a larger run can outgrow.
           #
           #   target = max(band top-up, floor + jobs/paths × gas per run × margin)
           #
           # Never below the band the scheduled sweep maintains: a small run
           # would otherwise refill a depleted address to less than the schedule
-          # keeps it at, and the next sweep would see it above the floor and
-          # leave it there — a load test quietly thinning the pool it borrowed.
+          # keeps it at, leaving the pool thinner than the day of headroom the
+          # schedule promises until the next sweep happens to land.
           #
           # The margin is for gas moving under us between this step and the end
           # of a run that can last two hours. The per-address and per-run caps

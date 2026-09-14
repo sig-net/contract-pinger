@@ -4,21 +4,23 @@ name: Fund Bidirectional Workers
 # than inside the service. The pinger reports balances and refuses to lease an
 # address that is short; nothing in the request path holds spending authority.
 #
-# Hourly, because that is what the band can cover: an address holds
+# Hourly, though GitHub runs only a fraction of these ticks. Each address holds
 # SIG_BIDIRECTIONAL_FUND_TOPUP_ETH - SIG_BIDIRECTIONAL_MIN_BALANCE_WEI of
-# headroom, and the defaults are sized in src/utils/env.ts to outlast one
-# sweep at the service's arrival cap. No band buys a whole day, so the
-# schedule cannot be stretched by widening it.
+# headroom, and the defaults are sized in src/utils/env.ts so the pool
+# outlasts a day of the scheduled one-a-minute load. A skipped tick then
+# costs nothing, and the hourly cadence only shortens how long a drained pool
+# waits for its refill.
 #
 # The ad hoc load test tops up the addresses it is about to use before it uses
 # them, so a run does not depend on this timer to start. What it does depend on
 # is a sweep landing mid-run — a run may last hours, longer than the headroom it
 # starts with — and on the deployed service, which shares this address set and
-# has no on-demand path of its own. Against a full pool a sweep sends nothing,
-# so the cadence costs a workflow minute rather than gas.
+# has no on-demand path of its own. A sweep sends only to the addresses that
+# spent since the last one — at a job a minute, usually one — so the cadence
+# costs a transfer or two an hour rather than a refill of the whole pool.
 #
 # What this does not do is watch the funding wallet. The script returns as soon
-# as it finds every address above the floor, and both reads of the wallet — the
+# as it finds every address at the target, and both reads of the wallet — the
 # affordability check and the runway figure — sit on the path that sends. So a
 # quiet hour reports the pool, not what is left to refill it with, and an empty
 # wallet surfaces on the first hour a top-up is actually due.
@@ -33,7 +35,22 @@ on:
         default: dev,testnet
         type: string
       topup:
-        description: Fill every address to this many ETH (blank keeps the band)
+        description: Fill every address to this many ETH (blank keeps the default target)
+        required: false
+        default: ''
+        type: string
+      # The caps exist to stop a mistyped figure, not a deliberate one. A
+      # target that fills every address costs target x addresses, which passes
+      # the per-run cap sized for the band as soon as it rises above it, so a
+      # manual fill needs a way to raise the cap for that run alone.
+      # Blank keeps the repository variable, or the schema default under it.
+      max_per_run:
+        description: Per-run spend cap in ETH for this run (blank keeps the default)
+        required: false
+        default: ''
+        type: string
+      max_per_address:
+        description: Per-address cap in ETH for this run; topup must not exceed it (blank keeps the default)
         required: false
         default: ''
         type: string
@@ -86,10 +103,13 @@ jobs:
       # must survive without a sweep. Every default below, and the arithmetic
       # that sizes it, lives in src/utils/env.ts — passed through unset here so
       # the number is written down once. Setting the variable overrides it.
+      # The two caps also take a dispatch input, which wins for that run; a
+      # schedule carries no inputs, so the sweep always runs under the default.
+      # A malformed input fails schema validation before anything is sent.
       SIG_BIDIRECTIONAL_MIN_BALANCE_WEI: ${{ vars.SIG_BIDIRECTIONAL_MIN_BALANCE_WEI }}
       SIG_BIDIRECTIONAL_FUND_TOPUP_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_TOPUP_ETH }}
-      SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH }}
-      SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH }}
+      SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH: ${{ inputs.max_per_address || vars.SIG_BIDIRECTIONAL_FUND_MAX_PER_ADDRESS_ETH }}
+      SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH: ${{ inputs.max_per_run || vars.SIG_BIDIRECTIONAL_FUND_MAX_PER_RUN_ETH }}
       SIG_BIDIRECTIONAL_FUND_RESERVE_ETH: ${{ vars.SIG_BIDIRECTIONAL_FUND_RESERVE_ETH }}
 
       # Cross-check the derived addresses against the deployed service before
@@ -132,10 +152,10 @@ jobs:
         run: |
           set -euo pipefail
           args=(--env "${ENV}")
-          # Blank on the schedule and by default, which is the band: top up
-          # whatever fell below the floor and leave the rest alone. Given a
-          # target, every address below it is filled to it instead — the same
-          # switch the ad hoc load test uses to fund for a specific run.
+          # Blank on the schedule and by default: every address below the
+          # default target is filled to it. Given a figure, that is the target
+          # instead — the same switch the ad hoc load test uses to fund for a
+          # specific run.
           if [ -n "${TOPUP}" ]; then args+=(--topup "${TOPUP}"); fi
           if [ "${DRY_RUN}" = 'true' ]; then args+=(--dry-run); fi
           pnpm fund "${args[@]}"

@@ -222,22 +222,32 @@ is written down. Everything else, both workflows included, passes the variable
 through unset and takes what the schema resolved. Re-measure the gas figure
 when the transaction mode or Sepolia gas moves, and the band follows from it.
 
-`pnpm fund` maintains that band: it tops up whatever fell below the floor and
-leaves the rest alone, so an hourly sweep over a healthy pool sends nothing.
-Passing `--topup <eth>` asks for something different — every address at that
-figure — so the target becomes the trigger too, and an address sitting just
-above the floor is topped up rather than skipped. The ad hoc load test uses
-this to size funding to the run it is about to drive, from `jobs`, `paths` and
+`pnpm fund` fills every address below the top-up target to it, so each
+sweep that lands leaves the pool holding the full band — a day of the
+scheduled one-a-minute load by default — however far it had drained. At that
+rate one address spends at a time, so an hourly sweep usually sends a single
+transfer. Passing `--topup <eth>` changes the target for that run. The ad hoc
+load test uses this to size funding to the run it is about to drive, from
+`jobs`, `paths` and
 the measured gas per round trip, floored at the band so a small run cannot
 leave the pool thinner than the schedule keeps it. The per-address and per-run
 caps are unchanged, so a job count too large to fund fails before anything is
 sent rather than partway through.
 
-The floor of the band is `SIG_BIDIRECTIONAL_MIN_BALANCE_WEI` — one variable,
-read by both the service that refuses to lease below it and the sweep that tops
-up below it. There is deliberately no separate funding minimum: a pair of them
-strands any address that lands between the two, unusable and never refilled,
-with nothing reporting a fault.
+Those caps are sized for the band, so a manual fill outgrows them quickly:
+`--topup 0.02` across twenty addresses is over 0.3 ETH against a 0.2 cap.
+Dispatching the `Fund Bidirectional Workers` workflow by hand takes
+`max_per_run` and `max_per_address` alongside `topup`, raising either cap for
+that run only. The schedule carries no inputs, so the hourly sweep always runs
+under the defaults.
+
+The floor of the band is `SIG_BIDIRECTIONAL_MIN_BALANCE_WEI`, the balance the
+service refuses to lease below. The sweep refills at the target, above it, and
+a scheduled sweep counts as funded once every address is back over the floor
+— not at the target, since the live service may spend from an address between
+its transfer and that check. There is deliberately no separate funding
+minimum: one below the service's floor would strand any address that lands
+between the two, unusable and never refilled, with nothing reporting a fault.
 
 An address is released back to the pool once its transaction confirms, not when
 the job finishes: the nonce is spent at mining time, long before the MPC
