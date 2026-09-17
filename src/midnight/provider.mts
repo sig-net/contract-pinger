@@ -1,8 +1,7 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import { createHmac } from 'node:crypto';
 import { mkdir } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
-import { createRequire } from 'node:module';
+import { resolve } from 'node:path';
 import { setNetworkId } from '@midnight-ntwrk/midnight-js/network-id';
 import {
   createProofProvider,
@@ -20,6 +19,7 @@ import {
   dustShortfall,
   ensureFeeReady,
   initialiseWalletFacade,
+  signetContractManagedPath,
   type WalletFacade,
   type AccountKeys,
   type NetworkId,
@@ -145,14 +145,9 @@ export async function openMidnightSession(config: MidnightConfig) {
     const zkConfigProvider = new NodeZkConfigProvider<CallerCircuitId>(
       managedPath
     );
-    const require = createRequire(import.meta.url);
-    const signetPath = resolve(
-      dirname(require.resolve('@sig-net/midnight-contract')),
-      'managed'
-    );
     const sources: ZKConfigProvider<string>[] = [
       zkConfigProvider,
-      new NodeZkConfigProvider<string>(signetPath),
+      new NodeZkConfigProvider<string>(signetContractManagedPath),
     ];
     const registry = new ZKConfigRegistry(sources);
     const base = httpClientProvingProvider(

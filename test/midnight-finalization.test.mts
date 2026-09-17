@@ -43,6 +43,7 @@ function fixture(
     error?: Error;
     disposeError?: Error;
     hangingDispose?: boolean;
+    constructionMs?: number;
   } = {}
 ) {
   let requests = 0;
@@ -78,7 +79,10 @@ function fixture(
   });
   const provider = new IndexerPublicDataProvider({ client, dispose }, 5000);
   providers.push(provider);
-  vi.mocked(indexerPublicDataProvider).mockReturnValueOnce(provider);
+  vi.mocked(indexerPublicDataProvider).mockImplementationOnce(() => {
+    vi.setSystemTime(Date.now() + (options.constructionMs ?? 0));
+    return provider;
+  });
   return {
     provider,
     dispose,
@@ -175,51 +179,65 @@ it.each(['timeout', 'abort'] as const)(
   }
 );
 
-it('returns the SDK finalization data and disposes after success', async () => {
-  // The actual ledger serializer supplies the provider's required proof/binding format.
-  // This empty simulator transaction is never sent to a network.
-  const tx = Transaction.fromParts('stagenet').mockProve();
-  const raw = Buffer.from(tx.serialize()).toString('hex');
-  const f = fixture({
-    data: {
-      transactions: [
-        {
-          __typename: 'RegularTransaction',
-          id: 7,
-          protocolVersion: 9,
-          raw,
-          hash: '22'.repeat(32),
-          identifiers: [txId],
-          transactionResult: { status: 'SUCCESS', segments: null },
-          unshieldedCreatedOutputs: [],
-          unshieldedSpentOutputs: [],
-          block: {
-            height: 3,
-            hash: '33'.repeat(32),
-            author: 'author',
-            timestamp: 1234,
+it.each(['on-time', 'late-result', 'slow-construction'] as const)(
+  'checks the finalization deadline before returning data (%s)',
+  async scenario => {
+    // The actual ledger serializer supplies the provider's required proof/binding format.
+    // This empty simulator transaction is never sent to a network.
+    const tx = Transaction.fromParts('stagenet').mockProve();
+    const raw = Buffer.from(tx.serialize()).toString('hex');
+    const f = fixture({
+      constructionMs: scenario === 'slow-construction' ? 1001 : 0,
+      data: {
+        transactions: [
+          {
+            __typename: 'RegularTransaction',
+            id: 7,
+            protocolVersion: 9,
+            raw,
+            hash: '22'.repeat(32),
+            identifiers: [txId],
+            transactionResult: { status: 'SUCCESS', segments: null },
+            unshieldedCreatedOutputs: [],
+            unshieldedSpentOutputs: [],
+            block: {
+              height: 3,
+              hash: '33'.repeat(32),
+              author: 'author',
+              timestamp: 1234,
+            },
+            fees: { paidFees: '10', estimatedFees: '9' },
           },
-          fees: { paidFees: '10', estimatedFees: '9' },
-        },
-      ],
-    },
-  });
-  const result = await waitForMidnightTransaction(
-    node,
-    txId,
-    new AbortController().signal,
-    1000
-  );
-  expect(result.txId).toBe(txId);
-  expect(result.status).toBe('SucceedEntirely');
-  expect(Buffer.from(result.tx.serialize()).toString('hex')).toBe(raw);
-  expect(result.blockHeight).toBe(3);
-  expect(result.fees).toEqual({ paidFees: '10', estimatedFees: '9' });
-  expect(f.dispose).toHaveBeenCalledOnce();
-  expect(f.queries()).toBe(0);
-  await vi.advanceTimersByTimeAsync(30_000);
-  expect(f.requests()).toBe(1);
-});
+        ],
+      },
+    });
+    const pending = waitForMidnightTransaction(
+      node,
+      txId,
+      new AbortController().signal,
+      1000
+    );
+    if (scenario !== 'on-time') {
+      if (scenario === 'late-result') vi.setSystemTime(1001);
+      await expect(pending).rejects.toThrow(
+        `Midnight transaction ${txId} finalization timed out after 1000ms`
+      );
+      expect(f.queries()).toBe(0);
+      expect(f.dispose).toHaveBeenCalledOnce();
+      return;
+    }
+    const result = await pending;
+    expect(result.txId).toBe(txId);
+    expect(result.status).toBe('SucceedEntirely');
+    expect(Buffer.from(result.tx.serialize()).toString('hex')).toBe(raw);
+    expect(result.blockHeight).toBe(3);
+    expect(result.fees).toEqual({ paidFees: '10', estimatedFees: '9' });
+    expect(f.dispose).toHaveBeenCalledOnce();
+    expect(f.queries()).toBe(0);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(f.requests()).toBe(1);
+  }
+);
 
 it('preserves an indexer error and disposes its watch', async () => {
   const original = new Error('indexer unavailable');
@@ -233,6 +251,30 @@ it('preserves an indexer error and disposes its watch', async () => {
   expect(f.dispose).toHaveBeenCalledOnce();
   expect(f.queries()).toBe(0);
 });
+
+it.each(['construction', 'watch'] as const)(
+  'preserves a synchronous %s error and disposes any owned provider',
+  async phase => {
+    const f = fixture();
+    const failure = new Error(`${phase} failed`);
+    if (phase === 'construction') {
+      vi.mocked(indexerPublicDataProvider)
+        .mockReset()
+        .mockImplementationOnce(() => {
+          throw failure;
+        });
+    } else {
+      vi.spyOn(f.provider, 'watchForTxData').mockImplementationOnce(() => {
+        throw failure;
+      });
+    }
+    await expect(
+      waitForMidnightTransaction(node, txId, new AbortController().signal, 1000)
+    ).rejects.toBe(failure);
+    expect(f.dispose).toHaveBeenCalledTimes(phase === 'construction' ? 0 : 1);
+    expect(f.queries()).toBe(0);
+  }
+);
 
 it('observes disposal failures without replacing the deadline error', async () => {
   const disposeError = new Error('socket teardown failed');
@@ -266,9 +308,18 @@ it('does not allocate a provider for an already cancelled or expired wait', asyn
   await expect(
     waitForMidnightTransaction(node, txId, controller.signal, 1000)
   ).rejects.toThrow('shutdown');
-  await expect(
-    waitForMidnightTransaction(node, txId, new AbortController().signal, 0)
-  ).rejects.toThrow(/finalization timed out/);
+  for (const timeout of [0, -1, NaN, Infinity]) {
+    await expect(
+      waitForMidnightTransaction(
+        node,
+        txId,
+        new AbortController().signal,
+        timeout
+      )
+    ).rejects.toThrow(
+      `Midnight transaction ${txId} finalization timed out after ${timeout}ms`
+    );
+  }
   expect(indexerPublicDataProvider).not.toHaveBeenCalled();
 });
 

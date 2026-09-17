@@ -10,13 +10,13 @@ import {
   normaliseSecp256k1PublicKey,
 } from '@sig-net/midnight';
 import {
+  blankAsUndefined,
   DEFAULT_ENDPOINTS,
+  getMidnightNodeConfig,
   type MidnightNodeConfig,
 } from '@sig-net/midnight-contract-deploy';
 
 const hex32 = z.string().regex(/^[0-9a-fA-F]{64}$/, 'must be 32 bytes of hex');
-const optional = (value: string | undefined): string | undefined =>
-  value?.trim() || undefined;
 
 export interface MidnightConfig {
   node: MidnightNodeConfig;
@@ -40,9 +40,9 @@ export function resolveMidnightIdentity(
   values: NodeJS.ProcessEnv = process.env
 ) {
   const stateDirectory = resolve(
-    optional(values.MPC_MIDNIGHT_STATE_DIR) ?? '.midnight'
+    blankAsUndefined(values.MPC_MIDNIGHT_STATE_DIR) ?? '.midnight'
   );
-  let callerAddress = optional(values.MPC_MIDNIGHT_CALLER_ADDRESS);
+  let callerAddress = blankAsUndefined(values.MPC_MIDNIGHT_CALLER_ADDRESS);
   if (!callerAddress) {
     try {
       const receipt = z
@@ -59,7 +59,7 @@ export function resolveMidnightIdentity(
           )
         );
       const centralAddress =
-        optional(values.MPC_MIDNIGHT_CENTRAL_ADDRESS) ??
+        blankAsUndefined(values.MPC_MIDNIGHT_CENTRAL_ADDRESS) ??
         getSignetContractAddress(MidnightNetwork.Stagenet);
       if (
         receipt.centralAddress.toLowerCase() !== centralAddress.toLowerCase()
@@ -77,7 +77,7 @@ export function resolveMidnightIdentity(
   return {
     callerAddress: callerAddress ? hex32.parse(callerAddress) : undefined,
     rootPublicKey: normaliseSecp256k1PublicKey(
-      optional(values.MPC_MIDNIGHT_ROOT_PUBLIC_KEY) ??
+      blankAsUndefined(values.MPC_MIDNIGHT_ROOT_PUBLIC_KEY) ??
         getMpcRootPublicKey(MidnightNetwork.Stagenet)
     ),
   };
@@ -89,7 +89,7 @@ export function resolveMidnightConfig(
   requireCaller = true
 ): MidnightConfig {
   const stateDirectory = resolve(
-    optional(values.MPC_MIDNIGHT_STATE_DIR) ?? '.midnight'
+    blankAsUndefined(values.MPC_MIDNIGHT_STATE_DIR) ?? '.midnight'
   );
   let stored: Record<string, string> = {};
   try {
@@ -98,7 +98,8 @@ export function resolveMidnightConfig(
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
   }
   const seed = hex32.parse(
-    optional(values.MPC_MIDNIGHT_PINGER_SEED) ?? stored.MPC_MIDNIGHT_PINGER_SEED
+    blankAsUndefined(values.MPC_MIDNIGHT_PINGER_SEED) ??
+      stored.MPC_MIDNIGHT_PINGER_SEED
   );
   const identity = resolveMidnightIdentity(values);
   const callerAddress = identity.callerAddress;
@@ -106,33 +107,30 @@ export function resolveMidnightConfig(
     throw new Error(
       'MPC_MIDNIGHT_CALLER_ADDRESS is required; deploy and initialise the pinger caller first'
     );
-  const defaults = DEFAULT_ENDPOINTS[MidnightNetwork.Stagenet];
+  const node = {
+    ...getMidnightNodeConfig({
+      NETWORK_ID: MidnightNetwork.Stagenet,
+      MIDNIGHT_NODE_URL: values.MPC_MIDNIGHT_NODE_URL,
+      MIDNIGHT_NODE_INDEXER_URL: values.MPC_MIDNIGHT_INDEXER_URL,
+      // The pinger's HTTP and WebSocket overrides are independent.
+      MIDNIGHT_NODE_INDEXER_WS_URL:
+        blankAsUndefined(values.MPC_MIDNIGHT_INDEXER_WS_URL) ??
+        DEFAULT_ENDPOINTS[MidnightNetwork.Stagenet].indexerWsUrl,
+      MIDNIGHT_NODE_PROOF_SERVER_URL: values.MPC_MIDNIGHT_PROOF_SERVER_URL,
+    }),
+  };
+  for (const field of [
+    'nodeUrl',
+    'indexerUrl',
+    'indexerWsUrl',
+    'proofServerUrl',
+  ] as const)
+    node[field] = z.url().parse(node[field]);
   return {
-    node: {
-      networkId: MidnightNetwork.Stagenet,
-      nodeUrl: z
-        .url()
-        .parse(optional(values.MPC_MIDNIGHT_NODE_URL) ?? defaults.nodeUrl),
-      indexerUrl: z
-        .url()
-        .parse(
-          optional(values.MPC_MIDNIGHT_INDEXER_URL) ?? defaults.indexerUrl
-        ),
-      indexerWsUrl: z
-        .url()
-        .parse(
-          optional(values.MPC_MIDNIGHT_INDEXER_WS_URL) ?? defaults.indexerWsUrl
-        ),
-      proofServerUrl: z
-        .url()
-        .parse(
-          optional(values.MPC_MIDNIGHT_PROOF_SERVER_URL) ??
-            defaults.proofServerUrl
-        ),
-    },
+    node,
     seed,
     operatorSecret: Buffer.from(
-      optional(values.MPC_MIDNIGHT_OPERATOR_SECRET)
+      blankAsUndefined(values.MPC_MIDNIGHT_OPERATOR_SECRET)
         ? hex32.parse(values.MPC_MIDNIGHT_OPERATOR_SECRET)
         : createHmac('sha256', Buffer.from(seed, 'hex'))
             .update('signet:contract-pinger:operator:v1')
@@ -140,7 +138,7 @@ export function resolveMidnightConfig(
       'hex'
     ),
     centralAddress: hex32.parse(
-      optional(values.MPC_MIDNIGHT_CENTRAL_ADDRESS) ??
+      blankAsUndefined(values.MPC_MIDNIGHT_CENTRAL_ADDRESS) ??
         getSignetContractAddress(MidnightNetwork.Stagenet)
     ),
     callerAddress: callerAddress ? hex32.parse(callerAddress) : undefined,

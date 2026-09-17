@@ -1,5 +1,5 @@
 import type { BidirectionalService } from '../handlers/signBidirectional';
-import type { JobRecord, JobState } from './store';
+import { durationsFor, type JobRecord } from './store';
 
 const percentile = (sorted: number[], p: number): number | null => {
   if (sorted.length === 0) return null;
@@ -14,11 +14,6 @@ const summarize = (values: number[]) => {
   const sorted = [...values].sort((a, b) => a - b);
   return {
     count: sorted.length,
-    // The floor, not just the middle. Sizing anything that skips work before a
-    // stage — a delayed respond watcher, say — needs the earliest the stage has
-    // ever completed, since a single case below the threshold is missed
-    // silently and recorded as a timeout. p05 shows whether that minimum is a
-    // lone outlier or the edge of a real cluster.
     min: sorted.length > 0 ? sorted[0] : null,
     p05: percentile(sorted, 5),
     p50: percentile(sorted, 50),
@@ -27,45 +22,25 @@ const summarize = (values: number[]) => {
   };
 };
 
-const span = (from?: number, to?: number) =>
-  from !== undefined && to !== undefined ? to - from : undefined;
-
-const collect = (
-  jobs: readonly JobRecord[],
-  pick: (j: JobRecord) => number | undefined
-) => jobs.map(pick).filter((v): v is number => v !== undefined);
-
-/**
- * Signature latency and respond latency are reported separately because they
- * measure different things: one is the MPC signing, the other is the MPC
- * watching Ethereum reach finality. Lease-wait time is reported alongside so
- * that a saturated address pool reads as queueing rather than hiding inside
- * the end-to-end number.
- */
-const latenciesFor = (jobs: readonly JobRecord[]) => ({
-  leaseWaitMs: summarize(
-    collect(jobs, j => span(j.timings.acceptedAt, j.timings.leaseAcquiredAt))
-  ),
-  signatureMs: summarize(
-    collect(jobs, j => span(j.timings.signSentAt, j.timings.signatureAt))
-  ),
-  confirmationMs: summarize(
-    collect(jobs, j => span(j.timings.broadcastAt, j.timings.confirmedAt))
-  ),
-  respondMs: summarize(
-    collect(jobs, j => span(j.timings.confirmedAt, j.timings.respondedAt))
-  ),
-  // Successes only. A failure also sets `finishedAt`, and pool-exhaustion
-  // failures finish in milliseconds, so including them drags the reported
-  // median of a tens-of-minutes round trip toward zero. The per-stage figures
-  // self-filter, since a failed job never reaches their closing timestamp.
-  totalMs: summarize(
-    collect(
-      jobs.filter(j => j.state === 'responded'),
-      j => span(j.timings.acceptedAt, j.timings.finishedAt)
-    )
-  ),
-});
+const latenciesFor = (jobs: readonly JobRecord[]) => {
+  const durations = jobs.map(job => {
+    const result = durationsFor(job.timings);
+    // Early failures must not lower the reported full-round-trip latency.
+    if (job.state !== 'responded') delete result.totalMs;
+    return result;
+  });
+  const metric = (name: string) =>
+    summarize(
+      durations.map(values => values[name]).filter(value => value !== undefined)
+    );
+  return {
+    leaseWaitMs: metric('leaseWaitMs'),
+    signatureMs: metric('signatureMs'),
+    confirmationMs: metric('confirmationMs'),
+    respondMs: metric('respondMs'),
+    totalMs: metric('totalMs'),
+  };
+};
 
 const countBy = <T extends string>(values: T[]): Record<string, number> => {
   const out: Record<string, number> = {};
@@ -95,7 +70,7 @@ export const buildStats = (service: BidirectionalService) => {
       active: service.jobs.activeCount,
       awaitingRespond: service.jobs.awaitingRespondCount,
       live: service.jobs.liveCount,
-      states: countBy(jobs.map(j => j.state as JobState)),
+      states: countBy(jobs.map(j => j.state)),
       failures: countBy(
         jobs
           .map(j => j.failureReason)

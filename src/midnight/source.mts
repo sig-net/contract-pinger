@@ -3,6 +3,7 @@ import {
   createUnprovenCallTx,
   submitTxAsync,
   verifyContractState,
+  type UnsubmittedCallTxPrivateData,
 } from '@midnight-ntwrk/midnight-js/contracts';
 import { SucceedEntirely } from '@midnight-ntwrk/midnight-js/types';
 import { indexerPublicDataProvider } from '@midnight-ntwrk/midnight-js-indexer-public-data-provider';
@@ -11,7 +12,6 @@ import {
   requestIdHex,
   requestIdBytes,
   respondBidirectionalEventToCircuitInput,
-  signatureRespondedEventToSignature,
   SignetRequestResponseReader,
 } from '@sig-net/midnight';
 import type { Hex, PublicClient } from 'viem';
@@ -26,6 +26,7 @@ import {
   NATIVE_REQUESTS_PATH,
   ERC20_REQUESTS_PATH,
   type CallerCircuitId,
+  type CallerPrivateState,
 } from './caller.mjs';
 import { resolveMidnightConfig } from './config.mjs';
 import { openMidnightSession } from './provider.mjs';
@@ -34,55 +35,7 @@ import { deriveMidnightWorkers } from './derivation.mjs';
 import { pendingRequestStore } from './pending.mjs';
 import { waitForMidnightTransaction } from './finalization.mjs';
 import { createRequestEventSource } from './events.mjs';
-
-/** Bound the caller's wait without releasing ownership of unfinished work. */
-export function withinDeadline<T>(
-  operation: (signal: AbortSignal) => Promise<T>,
-  timeoutMs: number,
-  signal: AbortSignal,
-  label: string
-): Promise<T> {
-  const controller = new AbortController();
-  const deadline = Date.now() + timeoutMs;
-  return new Promise<T>((resolve, reject) => {
-    const abort = () => controller.abort(signal.reason);
-    const timeout = () =>
-      controller.abort(new Error(`${label} timed out after ${timeoutMs}ms`));
-    const timer = setTimeout(timeout, Math.max(0, timeoutMs));
-    const cleanup = () => {
-      clearTimeout(timer);
-      signal.removeEventListener('abort', abort);
-    };
-    controller.signal.addEventListener(
-      'abort',
-      () => {
-        cleanup();
-        reject(controller.signal.reason);
-      },
-      { once: true }
-    );
-    signal.addEventListener('abort', abort, { once: true });
-    if (signal.aborted) abort();
-    if (timeoutMs <= 0) timeout();
-    if (controller.signal.aborted) return;
-    Promise.resolve()
-      .then(() => {
-        controller.signal.throwIfAborted();
-        return operation(controller.signal);
-      })
-      .then(
-        value => {
-          if (Date.now() >= deadline) timeout();
-          cleanup();
-          if (!controller.signal.aborted) resolve(value);
-        },
-        error => {
-          cleanup();
-          reject(error);
-        }
-      );
-  });
-}
+import { withinDeadline } from './deadline.mjs';
 
 /** Poll authenticated reads under one deadline, including stalled reads and settlement. */
 export function pollVerified<T>(
@@ -179,7 +132,10 @@ export async function createMidnightSource(
   const submitPrepared = async (
     ready: Awaited<ReturnType<typeof openMidnightSession>>,
     circuitId: CallerCircuitId,
-    unprovenTx: Parameters<typeof submitTxAsync>[1]['unprovenTx'],
+    prepared: UnsubmittedCallTxPrivateData<
+      Contract<CallerPrivateState>,
+      CallerCircuitId
+    >,
     signal: AbortSignal,
     recordTransaction: (txId: string) => Promise<void>
   ) => {
@@ -200,7 +156,7 @@ export async function createMidnightSource(
           },
         },
       },
-      { unprovenTx, circuitId }
+      { unprovenTx: prepared.unprovenTx, circuitId }
     );
     signal.throwIfAborted();
     const finalized = await waitForMidnightTransaction(
@@ -211,6 +167,10 @@ export async function createMidnightSource(
     );
     if (finalized.status !== SucceedEntirely)
       throw new Error(`Midnight transaction ${txId} did not succeed entirely`);
+    await ready.providers.privateStateProvider.set(
+      PRIVATE_STATE_ID,
+      prepared.nextPrivateState
+    );
     return finalized;
   };
 
@@ -238,8 +198,6 @@ export async function createMidnightSource(
       return deriveMidnightWorkers(paths, {
         MPC_MIDNIGHT_CALLER_ADDRESS: callerAddress,
         MPC_MIDNIGHT_ROOT_PUBLIC_KEY: config.rootPublicKey,
-        MPC_MIDNIGHT_CENTRAL_ADDRESS: config.centralAddress,
-        MPC_MIDNIGHT_STATE_DIR: config.stateDirectory,
       });
     },
     async submit({
@@ -282,21 +240,16 @@ export async function createMidnightSource(
               const finalized = await submitPrepared(
                 ready,
                 circuitId,
-                prepared.private.unprovenTx,
+                prepared.private,
                 active,
                 async sourceTx => {
                   await pending.update(requestId, { sourceTx });
                   onProgress?.({ requestId, sourceTx, nonce: built.nonce });
                 }
               );
-              await ready.providers.privateStateProvider.set(
-                PRIVATE_STATE_ID,
-                prepared.private.nextPrivateState
-              );
               return { requestId, finalized };
             } catch (error) {
-              // No contract transaction was attempted. Wait for raw preparation to
-              // stop before permitting another request; an outward timeout alone is insufficient.
+              // Only raw completion with no submission attempt can release the receipt.
               const record = await pending.read();
               if (record?.requestId === requestId && !record.sourceTx)
                 await pending.clear(requestId);
@@ -334,12 +287,10 @@ export async function createMidnightSource(
             throw new Error(
               'Midnight caller changed the Ethereum signing payload'
             );
-          const result = await reader.getVerifiedSignatureRespondedEvent(
-            requestId,
-            worker.address
-          );
-          if (!result.verified) return undefined;
-          const signed = signatureRespondedEventToSignature(result.verified);
+          const signed = (
+            await reader.getSignedEvmTransaction(requestId, worker.address)
+          )?.signature;
+          if (!signed) return undefined;
           return { r: signed.r, s: signed.s, v: signed.v };
         },
         signatureTimeoutMs,
@@ -372,13 +323,9 @@ export async function createMidnightSource(
             await submitPrepared(
               ready,
               circuitId,
-              prepared.private.unprovenTx,
+              prepared.private,
               active,
               settlementTx => pending.update(requestId, { settlementTx })
-            );
-            await ready.providers.privateStateProvider.set(
-              PRIVATE_STATE_ID,
-              prepared.private.nextPrivateState
             );
             await pending.clear(requestId);
           });

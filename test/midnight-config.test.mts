@@ -130,6 +130,55 @@ describe('Midnight deployment and wallet configuration', () => {
       config.seed
     );
   });
+  it('keeps endpoint overrides independent and ignores unrelated SDK environment', () => {
+    const values = {
+      MPC_MIDNIGHT_STATE_DIR: temporary(),
+      MPC_MIDNIGHT_PINGER_SEED: '22'.repeat(32),
+      MPC_MIDNIGHT_CALLER_ADDRESS: '33'.repeat(32),
+      NETWORK_ID: 'mainnet',
+      MIDNIGHT_NODE_URL: 'https://unrelated.invalid',
+    };
+    const defaults = resolveMidnightConfig(values).node;
+    expect(defaults.networkId).toBe('stagenet');
+    expect(defaults.nodeUrl).toBe('https://rpc.stagenet.shielded.tools');
+    for (const [variable, field, url] of [
+      ['MPC_MIDNIGHT_NODE_URL', 'nodeUrl', 'https://node.invalid'],
+      [
+        'MPC_MIDNIGHT_INDEXER_URL',
+        'indexerUrl',
+        'https://indexer.invalid/graphql',
+      ],
+      [
+        'MPC_MIDNIGHT_INDEXER_WS_URL',
+        'indexerWsUrl',
+        'wss://events.invalid/ws',
+      ],
+      [
+        'MPC_MIDNIGHT_PROOF_SERVER_URL',
+        'proofServerUrl',
+        'http://proof.invalid',
+      ],
+    ] as const) {
+      expect(
+        resolveMidnightConfig({ ...values, [variable]: '  ' }).node
+      ).toEqual(defaults);
+      expect(
+        resolveMidnightConfig({ ...values, [variable]: `  ${url}  ` }).node
+      ).toEqual({
+        ...defaults,
+        [field]: url,
+      });
+      expect(
+        resolveMidnightConfig({
+          ...values,
+          [variable]: url.replace('.invalid', '\n.invalid'),
+        }).node
+      ).toEqual({ ...defaults, [field]: url });
+      expect(() =>
+        resolveMidnightConfig({ ...values, [variable]: 'invalid' })
+      ).toThrow();
+    }
+  });
   it('fails on a malformed receipt instead of silently switching callers', () => {
     const dir = temporary();
     writeFileSync(resolve(dir, 'deployment.json'), 'invalid json');

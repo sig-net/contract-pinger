@@ -13,6 +13,8 @@ import {
   requestIdHex,
   respondBidirectionalEventToCircuitInput,
   signBidirectionalEventToUnsignedEvmTransaction,
+  SignetRequestResponseReader,
+  signatureRespondedEventToSignature,
 } from '@sig-net/midnight';
 import {
   calculateSignetAttestationDigest,
@@ -21,6 +23,7 @@ import {
   signAttestationDigest,
 } from '@sig-net/midnight/testing';
 import { describe, expect, it, vi } from 'vitest';
+import { SigningKey, computeAddress } from 'ethers';
 import { createPublicClient, http } from 'viem';
 import { sepolia } from 'viem/chains';
 import { buildTransaction, type TxMode } from '../src/utils/bidirectionalTx.js';
@@ -118,6 +121,66 @@ const attestation = (
       )
     ),
   });
+
+it('SDK signed transaction composition preserves verified signature selection', async () => {
+  const { contract, context } = await deploy();
+  const submitted = await contract.circuits.submitNative(
+    context,
+    native,
+    derivationPath
+  );
+  const id = requestIdHex(submitted.result);
+  const queryContractState = vi.fn(async () => ({
+    data: submitted.context.callContext.currentQueryContext.state,
+  }));
+  const reader = new SignetRequestResponseReader({
+    requesterContractAddress: callerAddress,
+    requesterRequestsPath: [0],
+    signetContractAddress: centralAddress,
+    publicDataProvider: { queryContractState },
+    eventSource: { querySignetEvents: async () => [] },
+  });
+  const unsigned = await reader.getUnsignedEvmTransaction(id);
+  const response = (secret: Uint8Array) => {
+    const signed = new SigningKey(secret).sign(unsigned.unsignedHash);
+    return {
+      signature: ecdsaSignatureToMpcSignature({
+        r: BigInt(signed.r),
+        s: BigInt(signed.s),
+        recoveryId: signed.yParity,
+      }),
+    };
+  };
+  const valid = response(responseSecret);
+  const wrong = response(operatorSecret);
+  const malformed = { signature: { ...valid.signature, recoveryId: 3n } };
+  const posts = vi.spyOn(reader, 'getSignatureRespondedEvents');
+  const expectedSigner = computeAddress(
+    new SigningKey(responseSecret).publicKey
+  );
+  for (const candidates of [
+    [],
+    [malformed, wrong],
+    [malformed, wrong, valid],
+  ]) {
+    posts.mockResolvedValue(candidates);
+    const previous = await reader.getVerifiedSignatureRespondedEvent(
+      id,
+      expectedSigner
+    );
+    const expected =
+      previous.verified &&
+      signatureRespondedEventToSignature(previous.verified);
+    const signed = await reader.getSignedEvmTransaction(id, expectedSigner);
+    expect(signed?.signature?.serialized).toBe(expected?.serialized);
+    expect(!!signed).toBe(candidates.includes(valid));
+    if (signed) {
+      expect(signed.unsignedSerialized).toBe(unsigned.unsignedSerialized);
+      expect(signed.from).toBe(expectedSigner);
+    }
+  }
+  expect(queryContractState).toHaveBeenCalledOnce();
+});
 
 describe('Midnight pinger operator authority', () => {
   it('pins the response key once and rejects a stranger before initialisation', async () => {

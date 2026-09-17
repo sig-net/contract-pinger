@@ -6,6 +6,8 @@ import { createPublicClient, http, serializeTransaction } from 'viem';
 import { createUnprovenCallTx } from '@midnight-ntwrk/midnight-js/contracts';
 import {
   SucceedEntirely,
+  FailEntirely,
+  FailFallible,
   type MidnightProvider,
   type FinalizedTxData,
   type ProofProvider,
@@ -98,6 +100,8 @@ const worker = {
 const signature = new SigningKey('0x' + '07'.repeat(32)).sign(
   EvmTransaction.from(built.rlpEncoded).unsignedHash
 );
+const signedTransaction = EvmTransaction.from(built.rlpEncoded);
+signedTransaction.signature = signature;
 const event = {
   signature: ecdsaSignatureToMpcSignature({
     r: BigInt(signature.r),
@@ -111,8 +115,10 @@ const transaction = (identifier: string) =>
   });
 const initialTx = transaction(sourceTx);
 const completeTx = transaction(settlementTx);
-const finalized = (txId: string, status = SucceedEntirely) =>
-  boundary<FinalizedTxData>({ txId, status, blockHeight: 10 });
+const finalized = (
+  txId: string,
+  status: FinalizedTxData['status'] = SucceedEntirely
+) => boundary<FinalizedTxData>({ txId, status, blockHeight: 10 });
 
 let config: configuration.MidnightConfig;
 let sources: BidirectionalSource[];
@@ -244,8 +250,8 @@ beforeEach(async () => {
   ).mockResolvedValue(EvmTransaction.from(built.rlpEncoded));
   vi.spyOn(
     SignetRequestResponseReader.prototype,
-    'getVerifiedSignatureRespondedEvent'
-  ).mockResolvedValue(boundary({ verified: event }));
+    'getSignedEvmTransaction'
+  ).mockResolvedValue(signedTransaction);
   vi.spyOn(
     SignetRequestResponseReader.prototype,
     'getVerifiedRespondBidirectionalEvent'
@@ -262,6 +268,22 @@ afterEach(async () => {
 });
 
 describe('Midnight request recovery journal', () => {
+  it('rejects a changed signing payload before reading signature responses', async () => {
+    const changed = EvmTransaction.from(built.rlpEncoded);
+    changed.nonce++;
+    vi.mocked(
+      SignetRequestResponseReader.prototype.getUnsignedEvmTransaction
+    ).mockResolvedValueOnce(changed);
+    const original = await source();
+    const submitted = await original.submit(args());
+    await expect(submitted.signature).rejects.toThrow(
+      'Midnight caller changed the Ethereum signing payload'
+    );
+    expect(
+      SignetRequestResponseReader.prototype.getSignedEvmTransaction
+    ).not.toHaveBeenCalled();
+  });
+
   it('retains accepted-late request identity and blocks another submission, including after restart', async () => {
     const accepted = deferred(sourceTx);
     networkSubmit.mockReturnValueOnce(accepted.promise);
@@ -398,6 +420,41 @@ describe('Midnight request recovery journal', () => {
     );
     expect(networkSubmit).toHaveBeenCalledTimes(2);
   });
+
+  it.each([
+    ['request', FailEntirely],
+    ['request', FailFallible],
+    ['settlement', FailEntirely],
+    ['settlement', FailFallible],
+  ] as const)(
+    'retains recovery state without private updates when %s finalizes with %s',
+    async (phase, status) => {
+      const failedTx = phase === 'request' ? sourceTx : settlementTx;
+      vi.mocked(finalization.waitForMidnightTransaction).mockImplementation(
+        async (_node, txId) =>
+          finalized(txId, txId === failedTx ? status : SucceedEntirely)
+      );
+      const original = await source();
+      const failure = `Midnight transaction ${failedTx} did not succeed entirely`;
+      if (phase === 'request') {
+        await expect(original.submit(args())).rejects.toThrow(failure);
+      } else {
+        const submitted = await original.submit(args());
+        await expect(submitted.response).rejects.toThrow(failure);
+      }
+      expect(privateSet).toHaveBeenCalledTimes(phase === 'request' ? 1 : 2);
+      expect(networkSubmit).toHaveBeenCalledTimes(phase === 'request' ? 1 : 2);
+      expect(await record()).toMatchObject({
+        requestId,
+        sourceTx,
+        nonce: 9,
+        ...(phase === 'settlement' ? { settlementTx } : {}),
+      });
+      await expect(original.assertReady?.()).rejects.toThrow(
+        'requires reconciliation'
+      );
+    }
+  );
 
   it('does not commit next private state when request finalization fails', async () => {
     vi.mocked(finalization.waitForMidnightTransaction).mockRejectedValueOnce(

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Hex } from 'viem';
 
 const mock = vi.hoisted(() => {
-  const address = '0x1111111111111111111111111111111111111111';
+  const address: Hex = '0x1111111111111111111111111111111111111111';
   const source = () => ({
     deriveWorkers: vi.fn(async (_client: unknown, paths: readonly string[]) =>
       paths.map(path => ({ path, address }))
@@ -12,6 +12,8 @@ const mock = vi.hoisted(() => {
   });
   return {
     address,
+    build: vi.fn(),
+    attach: vi.fn(),
     solana: source(),
     midnight: source(),
     client: {
@@ -32,16 +34,8 @@ vi.mock('../src/midnight/source.mjs', () => ({
 vi.mock('../src/utils/bidirectionalTx', async importOriginal => ({
   ...(await importOriginal<typeof import('../src/utils/bidirectionalTx')>()),
   createEthereumClient: () => mock.client,
-  buildTransaction: async () => ({
-    nonce: 0,
-    gasCostWei: 1n,
-    unsigned: {},
-    rlpEncoded: '0x01',
-  }),
-  attachSignature: async () => ({
-    serialized: '0x01',
-    recoveredFrom: mock.address,
-  }),
+  buildTransaction: mock.build,
+  attachSignature: mock.attach,
 }));
 
 import {
@@ -51,13 +45,16 @@ import {
 } from '../src/handlers/signBidirectional';
 import { env } from '../src/utils/env';
 import { JobStore } from '../src/jobs/store';
+import { NoWorkerAvailableError } from '../src/utils/workerPool';
 
 const deferred = <T>() => {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>(done => {
+  let reject!: (reason: Error) => void;
+  const promise = new Promise<T>((done, fail) => {
     resolve = done;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 };
 let response = deferred<Hex>();
 let submittedSignal: AbortSignal | undefined;
@@ -82,6 +79,16 @@ beforeEach(() => {
   vi.clearAllMocks();
   response = deferred<Hex>();
   submittedSignal = undefined;
+  mock.build.mockResolvedValue({
+    nonce: 0,
+    gasCostWei: 1n,
+    unsigned: {},
+    rlpEncoded: '0x01',
+  });
+  mock.attach.mockResolvedValue({
+    serialized: '0x01',
+    recoveredFrom: mock.address,
+  });
   mock.solana.assertReady.mockResolvedValue(undefined);
   mock.midnight.assertReady.mockResolvedValue(undefined);
   mock.client.sendRawTransaction.mockResolvedValue('0x1234');
@@ -98,6 +105,246 @@ afterEach(async () => {
 });
 
 describe('bidirectional source dispatch', () => {
+  it.each([
+    ['signature', 'signature_timeout', 'failed'],
+    ['preparation', 'internal_error', 'pending'],
+  ] as const)(
+    'publishes %s failure at the existing lease handoff boundary',
+    async (phase, reason, stateAtHandoff) => {
+      const stalled = deferred<never>();
+      const error = new Error(`${phase} failed`);
+      const diagnostic = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => {});
+      if (phase === 'preparation') {
+        mock.midnight.submit.mockReturnValueOnce(stalled.promise);
+      } else {
+        mock.midnight.submit.mockImplementationOnce(
+          async (args: { signal: AbortSignal }) => ({
+            ...(await submit('midnight-tx')(args)),
+            signature: stalled.promise,
+          })
+        );
+      }
+      const service = new BidirectionalService(
+        'stagenet',
+        'http://localhost:8545',
+        'midnight'
+      );
+      try {
+        const job = service.start('eth_self_transfer');
+        await vi.waitFor(() =>
+          expect(mock.midnight.submit).toHaveBeenCalledOnce()
+        );
+        const handoff = service.pool.acquireWithin(1000).then(worker => {
+          const state = job.state;
+          service.pool.release(worker.path);
+          return state;
+        });
+        stalled.reject(error);
+        await expect(handoff).resolves.toBe(stateAtHandoff);
+        await vi.waitFor(() => expect(job.failureReason).toBe(reason));
+        expect(job.error).toBe(error.message);
+        expect(diagnostic).toHaveBeenCalledTimes(
+          phase === 'preparation' ? 1 : 0
+        );
+      } finally {
+        diagnostic.mockRestore();
+      }
+    }
+  );
+
+  it.each(['balance', 'estimate', 'sender'] as const)(
+    'keeps direct %s failure precedence over concurrent shutdown',
+    async phase => {
+      if (phase === 'balance') {
+        mock.client.getBalance.mockImplementationOnce(async () => {
+          abortActiveJobs();
+          return 0n;
+        });
+      } else if (phase === 'estimate') {
+        mock.build.mockImplementationOnce(async () => {
+          abortActiveJobs();
+          throw new Error('insufficient funds for gas');
+        });
+      } else {
+        mock.attach.mockImplementationOnce(async () => {
+          abortActiveJobs();
+          return {
+            serialized: '0x01',
+            recoveredFrom: '0x2222222222222222222222222222222222222222',
+          };
+        });
+      }
+      const service = new BidirectionalService(
+        'stagenet',
+        'http://localhost:8545',
+        'midnight'
+      );
+      const job = service.start('eth_self_transfer');
+      await vi.waitFor(() => expect(job.state).toBe('failed'));
+      expect(job.failureReason).toBe(
+        phase === 'sender' ? 'derivation_mismatch' : 'preflight_underfunded'
+      );
+      expect(mock.client.sendRawTransaction).not.toHaveBeenCalled();
+      expect(service.pool.all().every(worker => !worker.busy)).toBe(true);
+    }
+  );
+
+  it.each(['broadcast', 'confirmation'] as const)(
+    'quarantines %s uncertainty before classifying concurrent shutdown',
+    async phase => {
+      const fail = async () => {
+        abortActiveJobs();
+        throw new Error('connection lost');
+      };
+      if (phase === 'broadcast')
+        mock.client.sendRawTransaction.mockImplementationOnce(fail);
+      else mock.client.waitForTransactionReceipt.mockImplementationOnce(fail);
+      const service = new BidirectionalService(
+        'stagenet',
+        'http://localhost:8545',
+        'midnight'
+      );
+      const job = service.start('eth_self_transfer');
+      await vi.waitFor(() => expect(job.failureReason).toBe('shutdown'));
+      expect(service.pool.quarantined()).toHaveLength(1);
+      expect(service.pool.quarantined()[0].pendingNonce).toBe(0);
+      expect(service.pool.all().every(worker => !worker.busy)).toBe(true);
+    }
+  );
+
+  it('records successful broadcast identity before the next shutdown checkpoint', async () => {
+    mock.client.sendRawTransaction.mockImplementationOnce(async () => {
+      abortActiveJobs();
+      return '0xaccepted';
+    });
+    const service = new BidirectionalService(
+      'stagenet',
+      'http://localhost:8545',
+      'midnight'
+    );
+    const job = service.start('eth_self_transfer');
+    await vi.waitFor(() => expect(job.failureReason).toBe('shutdown'));
+    expect(job.ethTxHash).toBe('0xaccepted');
+    expect(mock.client.waitForTransactionReceipt).toHaveBeenCalledWith(
+      expect.objectContaining({ hash: '0xaccepted' })
+    );
+    expect(service.pool.quarantined()).toHaveLength(0);
+  });
+
+  it('keeps a reassigned Solana lease owned by the next job after response completion', async () => {
+    const service = new BidirectionalService('dev', 'http://localhost:8545');
+    const job = service.start('eth_self_transfer');
+    await vi.waitFor(() => expect(job.state).toBe('confirmed'));
+    const next = service.pool.acquire();
+    expect(next.path).toBe(job.path);
+    response.resolve('0x01');
+    await vi.waitFor(() => expect(job.state).toBe('responded'));
+    expect(next.busy).toBe(true);
+    service.pool.release(next.path);
+  });
+
+  it('quarantines synchronous broadcast throws under the same failure reason', async () => {
+    mock.client.sendRawTransaction.mockImplementationOnce(() => {
+      throw new Error('synchronous provider failure');
+    });
+    const service = new BidirectionalService(
+      'stagenet',
+      'http://localhost:8545',
+      'midnight'
+    );
+    const job = service.start('eth_self_transfer');
+    await vi.waitFor(() => expect(job.failureReason).toBe('broadcast_failed'));
+    expect(job.error).toBe('synchronous provider failure');
+    expect(service.pool.quarantined()).toHaveLength(1);
+  });
+
+  it('records a reverted receipt without quarantining its consumed nonce', async () => {
+    mock.client.waitForTransactionReceipt.mockResolvedValueOnce({
+      status: 'reverted',
+    });
+    const service = new BidirectionalService(
+      'stagenet',
+      'http://localhost:8545',
+      'midnight'
+    );
+    const job = service.start('eth_self_transfer');
+    await vi.waitFor(() =>
+      expect(job.failureReason).toBe('transaction_reverted')
+    );
+    expect(job.error).toBe('Transaction 0x1234 reverted');
+    expect(service.pool.quarantined()).toHaveLength(0);
+    expect(submittedSignal?.aborted).toBe(true);
+  });
+
+  it.each([
+    ['all_busy', 'all_workers_busy'],
+    ['all_underfunded', 'all_workers_underfunded'],
+  ] as const)(
+    'preserves the %s acquisition failure reason',
+    async (reason, failure) => {
+      const service = new BidirectionalService('dev', 'http://localhost:8545');
+      const error = new NoWorkerAvailableError(reason);
+      const acquire = vi
+        .spyOn(service.pool, 'acquireWithin')
+        .mockRejectedValue(error);
+      const diagnostic = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => {});
+      try {
+        const job = service.start('eth_self_transfer');
+        await vi.waitFor(() => expect(job.state).toBe('failed'));
+        expect(job.failureReason).toBe(failure);
+        expect(job.error).toBe(error.message);
+        expect(mock.solana.submit).not.toHaveBeenCalled();
+        expect(diagnostic).not.toHaveBeenCalled();
+      } finally {
+        acquire.mockRestore();
+        diagnostic.mockRestore();
+      }
+    }
+  );
+
+  it('refreshes only derived addresses before reconciling quarantined nonces', async () => {
+    const service = new BidirectionalService('dev', 'http://localhost:8545');
+    const [first, second] = service.pool.all();
+    const other = '0x2222222222222222222222222222222222222222';
+    service.pool.setAddress(first.path, mock.address);
+    service.pool.setAddress(second.path, other);
+    service.pool.setBalance(second.path, 0n, 1n);
+    service.pool.quarantine(first.path, 7);
+    mock.client.getTransactionCount
+      .mockResolvedValueOnce(7)
+      .mockResolvedValueOnce(8);
+    await service.refreshBalances();
+    expect(mock.client.getBalance.mock.calls).toEqual([
+      [{ address: mock.address }],
+      [{ address: other }],
+    ]);
+    expect(first.balanceWei).toBe(10n ** 18n);
+    expect(second.underfunded).toBe(false);
+    expect(service.pool.quarantined()).toHaveLength(1);
+    expect(
+      mock.client.getTransactionCount.mock.invocationCallOrder[0]
+    ).toBeGreaterThan(mock.client.getBalance.mock.invocationCallOrder[1]);
+  });
+
+  it('refreshes underfunded workers before leasing without rereading funded workers', async () => {
+    const service = new BidirectionalService('dev', 'http://localhost:8545');
+    await service.ensureAddresses();
+    const [first, second] = service.pool.all();
+    service.pool.setBalance(first.path, 0n, 1n);
+    service.pool.setBalance(second.path, 0n, 1n);
+    const job = service.start('eth_self_transfer');
+    await vi.waitFor(() => expect(job.state).toBe('confirmed'));
+    expect(first.underfunded).toBe(false);
+    expect(second.underfunded).toBe(false);
+    expect(mock.client.getBalance).toHaveBeenCalledTimes(3);
+    response.resolve('0x01');
+    await vi.waitFor(() => expect(job.state).toBe('responded'));
+  });
+
   it('defaults to Solana and isolates its cache, pools and jobs from Midnight', async () => {
     const solana = getService('dev', 'http://localhost:8545');
     const midnight = getService(
@@ -297,7 +544,7 @@ describe('bidirectional source dispatch', () => {
   });
 
   it('abandons shutdown during preparation before any submission', async () => {
-    const derived = deferred<{ path: string; address: string }[]>();
+    const derived = deferred<{ path: string; address: Hex }[]>();
     mock.midnight.deriveWorkers.mockReturnValueOnce(derived.promise);
     const service = new BidirectionalService(
       'stagenet',

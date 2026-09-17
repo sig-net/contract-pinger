@@ -16,10 +16,10 @@ import {
 } from '@midnight-ntwrk/midnight-js/contracts';
 import {
   pollVerified,
-  withinDeadline,
   createWalletLane,
   createMidnightSource,
 } from '../src/midnight/source.mjs';
+import { withinDeadline } from '../src/midnight/deadline.mjs';
 import * as providers from '../src/midnight/provider.mjs';
 import * as configuration from '../src/midnight/config.mjs';
 import * as indexer from '@midnight-ntwrk/midnight-js-indexer-public-data-provider';

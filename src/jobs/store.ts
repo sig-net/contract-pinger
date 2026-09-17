@@ -77,7 +77,7 @@ export interface JobView extends Omit<JobRecord, 'timings'> {
   durations: Record<string, number>;
 }
 
-const durationsFor = (t: JobTimings): Record<string, number> => {
+export const durationsFor = (t: JobTimings): Record<string, number> => {
   const span = (from?: number, to?: number) =>
     from !== undefined && to !== undefined ? to - from : undefined;
 
