@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "scripts": {
     "start": "node dist/index.js",
-    "dev": "ts-node src/index.ts",
+    "dev": "node --import tsx src/index.ts",
     "build": "tsc",
     "test": "vitest run --exclude \"**/*.e2e.test.ts\"",
     "format": "prettier --write .",
@@ -13,7 +13,11 @@
     "loadtest": "tsx scripts/loadtest.ts",
     "fund": "tsx scripts/fund-workers.ts",
     "typecheck": "tsc -p tsconfig.check.json",
-    "fund:config": "tsx scripts/fund-config.ts"
+    "fund:config": "tsx scripts/fund-config.ts",
+    "compile:midnight": "node scripts/compile-midnight.mjs",
+    "compile:midnight:zk": "node scripts/compile-midnight.mjs --zk",
+    "deploy:midnight": "node --import tsx scripts/deploy-midnight.mts",
+    "fund:midnight": "node --import tsx scripts/fund-midnight.mts"
   },
   "keywords": [],
   "author": "",
@@ -27,7 +31,18 @@
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "viem": "^2.47.6",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "@sig-net/midnight": "0.21.0",
+    "@sig-net/midnight-contract": "0.21.0",
+    "@sig-net/midnight-contract-deploy": "0.21.0",
+    "@midnight-ntwrk/midnight-js": "5.0.0-beta.6",
+    "@midnight-ntwrk/midnight-js-indexer-public-data-provider": "5.0.0-beta.6",
+    "@midnight-ntwrk/midnight-js-level-private-state-provider": "5.0.0-beta.6",
+    "@midnight-ntwrk/midnight-js-node-zk-config-provider": "5.0.0-beta.6",
+    "@midnight-ntwrk/midnight-js-http-client-proof-provider": "5.0.0-beta.6",
+    "@midnight-ntwrk/compact-runtime": "0.18.0-rc.1",
+    "@midnightntwrk/ledger-v9": "1.0.0-rc.3",
+    "ethers": "^6.17.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
@@ -40,5 +55,12 @@
     "tsx": "^4.21.0",
     "typescript": "^6.0.2",
     "vitest": "^4.1.2"
+  },
+  "pnpm": {
+    "overrides": {
+      "@midnightntwrk/ledger-v9": "1.0.0-rc.3",
+      "@midnightntwrk/onchain-runtime-v4": "4.0.0-rc.3",
+      "@midnightntwrk/wallet-sdk-address-format": "4.0.0-beta.2"
+    }
   }
 }

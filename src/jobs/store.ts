@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import type { Hex } from 'viem';
+import type { SourceChain } from '../utils/bidirectionalSource';
 import type { TxMode } from '../utils/bidirectionalTx';
 
 export type JobState =
@@ -51,11 +52,13 @@ export interface JobTimings {
 export interface JobRecord {
   id: string;
   environment: string;
+  sourceChain: SourceChain;
   mode: TxMode;
   state: JobState;
   path?: string;
   derivedAddress?: Hex;
   requestId?: string;
+  sourceTx?: string;
   solanaTx?: string;
   ethTxHash?: Hex;
   nonce?: number;
@@ -122,7 +125,8 @@ export class JobStore {
   }
 
   /**
-   * Jobs holding an address and doing chain work.
+   * Jobs holding an address and doing chain work. Midnight retains its address
+   * through response settlement to serialize its shared wallet and caller.
    *
    * Counted apart from the finality wait because they are bounded by different
    * things. Everything up to `confirmed` holds an address lease and a stream of
@@ -138,7 +142,7 @@ export class JobStore {
       if (
         job.state !== 'responded' &&
         job.state !== 'failed' &&
-        job.state !== 'confirmed'
+        (job.state !== 'confirmed' || job.sourceChain === 'midnight')
       ) {
         active += 1;
       }
@@ -156,7 +160,9 @@ export class JobStore {
   }
 
   get liveCount(): number {
-    return this.activeCount + this.awaitingRespondCount;
+    return [...this.jobs.values()].filter(
+      job => job.state !== 'responded' && job.state !== 'failed'
+    ).length;
   }
 
   /**
@@ -171,10 +177,15 @@ export class JobStore {
     return null;
   }
 
-  create(environment: string, mode: TxMode): JobRecord {
+  create(
+    environment: string,
+    mode: TxMode,
+    sourceChain: SourceChain = 'solana'
+  ): JobRecord {
     const job: JobRecord = {
       id: randomUUID(),
       environment,
+      sourceChain,
       mode,
       state: 'pending',
       timings: { acceptedAt: Date.now() },

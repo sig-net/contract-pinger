@@ -39,10 +39,9 @@ export class NoWorkerAvailableError extends Error {
  * Distinct paths give distinct addresses and therefore independent nonce
  * spaces.
  *
- * A lease covers only the window from reading the nonce to seeing the
- * transaction confirmed, *not* the respond wait. The nonce is consumed when
- * the transaction mines; the MPC's finality wait happens long after the
- * address is free to move on.
+ * Solana releases its lease after Ethereum confirmation, when the nonce has
+ * been consumed. Midnight keeps its lease through response settlement so the
+ * next job cannot compete for its shared caller state and wallet inputs.
  */
 interface Waiter {
   resolve: (worker: Worker) => void;

@@ -1,0 +1,114 @@
+pragma language_version >= 0.25;
+
+import CompactStandardLibrary;
+import "@sig-net/midnight/src/Signet";
+
+// These are the only request indexes. Their compiler ledger paths are checked
+// against real emitted notifications by the simulator tests.
+export ledger nativeRequests: SignBidirectionalEventMap<EvmType2TxParams<2, 0, 0>, 2, 34>;
+export ledger erc20Requests: SignBidirectionalEventMap<EvmType2TxParams<2, 0, 0>, 34, 34>;
+export ledger requestNonce: Counter;
+export ledger mpcResponseKey: Secp256k1Point;
+export ledger initialised: Counter;
+sealed ledger operator: Bytes<32>;
+sealed ledger signetSigner: SignetSigner;
+export sealed ledger destinationChainId: Uint<64>;
+
+witness operatorSecretKey(): Bytes<32>;
+
+// A proof-system hard fork changing transientHash requires redeployment or
+// coordinated migration of this commitment and pending request identities.
+export pure circuit operatorCommitment(secret: Bytes<32>): Bytes<32> {
+  return upgradeFromTransient(transientHash<Vector<2, Bytes<32>>>([
+    pad(32, "signet-pinger:operator:"), secret
+  ]));
+}
+
+constructor(commitment: Bytes<32>, signer: SignetSigner, chainId: Uint<64>) {
+  operator = disclose(commitment);
+  signetSigner = disclose(signer);
+  destinationChainId = disclose(chainId);
+}
+
+circuit requireOperator(): [] {
+  assert(operatorCommitment(operatorSecretKey()) == operator, "Not the operator");
+}
+
+export circuit initialise(responseKey: Secp256k1Point): [] {
+  requireOperator();
+  assert(initialised == 0, "Already initialised");
+  mpcResponseKey = disclose(responseKey);
+  initialised.increment(1);
+}
+
+circuit validateTransaction(tx: EvmType2TxParams<2, 0, 0>): [] {
+  requireOperator();
+  assert(initialised != 0, "Not initialised");
+  assert(tx.chainId == destinationChainId, "Wrong destination chain");
+  assert(tx.value == 0, "Nonzero transfer value");
+  assert(tx.accessListEntryCount == 0, "Access list not supported");
+  assert(tx.maxPriorityFeePerGas <= tx.maxFeePerGas, "Priority fee exceeds max fee");
+}
+
+export circuit submitNative(tx: EvmType2TxParams<2, 0, 0>, path: Bytes<32>): RequestId {
+  validateTransaction(tx);
+  assert(!tx.calldata.is_some, "Native transfer has calldata");
+  const request = constructSignBidirectionalEvent<EvmType2TxParams<2, 0, 0>, 2, 34>(
+    kernel.self(), requestNonce as Uint<64>, 1, path,
+    MPCSignatureAlgorithm.ecdsa, MPCDestination.unused, default<Bytes<64>>,
+    TxParamType.evmType2, tx, ethereumCaip2Id(),
+    "[]" as Bytes<2>, "[{\"name\":\"success\",\"type\":\"bool\"}]" as Bytes<34>
+  );
+  const id = disclose(calculateRequestId<EvmType2TxParams<2, 0, 0>, 2, 34>(request));
+  assert(!nativeRequests.member(id), "Request already exists");
+  requestNonce.increment(1);
+  nativeRequests.insert(id, disclose(request));
+  signetSigner.signBidirectional(id, constructSignBidirectionalEventNotificationV1(
+    kernel.self(), 1, [0, 0, 0, 0] as Vector<4, Uint<8>>
+  ));
+  return id;
+}
+
+export circuit submitErc20(tx: EvmType2TxParams<2, 0, 0>, path: Bytes<32>): RequestId {
+  validateTransaction(tx);
+  assert(tx.calldata.is_some, "ERC20 transfer requires calldata");
+  assert(tx.calldata.value.selector == Bytes[0xa9, 0x05, 0x9c, 0xbb], "Not an ERC20 transfer");
+  assert(tx.calldata.value.noWords == 2, "ERC20 transfer requires two words");
+  assert(tx.calldata.value.words[1] == default<Bytes<32>>, "Nonzero ERC20 amount");
+  const schema = "[{\"name\":\"success\",\"type\":\"bool\"}]" as Bytes<34>;
+  const request = constructSignBidirectionalEvent<EvmType2TxParams<2, 0, 0>, 34, 34>(
+    kernel.self(), requestNonce as Uint<64>, 1, path,
+    MPCSignatureAlgorithm.ecdsa, MPCDestination.unused, default<Bytes<64>>,
+    TxParamType.evmType2, tx, ethereumCaip2Id(), schema, schema
+  );
+  const id = disclose(calculateRequestId<EvmType2TxParams<2, 0, 0>, 34, 34>(request));
+  assert(!erc20Requests.member(id), "Request already exists");
+  requestNonce.increment(1);
+  erc20Requests.insert(id, disclose(request));
+  signetSigner.signBidirectional(id, constructSignBidirectionalEventNotificationV1(
+    kernel.self(), 1, [1, 0, 0, 0] as Vector<4, Uint<8>>
+  ));
+  return id;
+}
+
+circuit verifyCompletion(id: RequestId, attestation: RespondBidirectionalEvent, output: Bytes<1>): [] {
+  assert(initialised != 0, "Not initialised");
+  assert(verifyRespondBidirectionalEvent<1>(id, output, disclose(attestation), mpcResponseKey),
+    "Invalid attestation signature");
+}
+
+// A successful call may return either boolean value. Both authenticated values
+// consume the request; the runner reports the result separately from cleanup.
+export circuit completeNative(id: RequestId, attestation: RespondBidirectionalEvent, output: Bytes<1>): [] {
+  const key = disclose(id);
+  verifyCompletion(key, attestation, output);
+  assert(nativeRequests.member(key), "Request not found");
+  nativeRequests.remove(key);
+}
+
+export circuit completeErc20(id: RequestId, attestation: RespondBidirectionalEvent, output: Bytes<1>): [] {
+  const key = disclose(id);
+  verifyCompletion(key, attestation, output);
+  assert(erc20Requests.member(key), "Request not found");
+  erc20Requests.remove(key);
+}

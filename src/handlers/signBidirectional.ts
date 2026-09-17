@@ -1,23 +1,20 @@
-import { ComputeBudgetProgram, PublicKey, Transaction } from '@solana/web3.js';
-import { constants, contracts } from '@sig-net/signet.js';
 import type { Hex, PublicClient } from 'viem';
 import {
   buildTransaction,
   attachSignature,
   createEthereumClient,
   ETHEREUM_TARGETS,
-  withHexPrefix,
-  ETHEREUM_CAIP2_ID,
   EXPECTED_SERIALIZED_OUTPUT,
-  KEY_VERSION,
   type TxMode,
+  type BidirectionalEnvironment,
 } from '../utils/bidirectionalTx';
+import { assertDerivedSender } from '../utils/derivation';
+import { createSolanaSource } from '../utils/solanaSource';
 import {
-  assertDerivedSender,
-  deriveWorkerAddresses,
-} from '../utils/derivation';
-import { buildSignBidirectionalInstruction } from '../utils/signBidirectionalIx';
-import { getSharedSolana, type SolanaEnvironment } from '../utils/initSolana';
+  isSourceEnvironment,
+  type BidirectionalSource,
+  type SourceChain,
+} from '../utils/bidirectionalSource';
 import { env } from '../utils/env';
 import {
   buildPaths,
@@ -28,25 +25,6 @@ import {
 import { RateLimiter } from '../utils/rateLimiter';
 import { JobStore, type JobRecord } from '../jobs/store';
 
-const contractAddresses = {
-  dev: constants.CONTRACT_ADDRESSES.SOLANA.TESTNET_DEV,
-  testnet: constants.CONTRACT_ADDRESSES.SOLANA.TESTNET,
-  mainnet: constants.CONTRACT_ADDRESSES.SOLANA.MAINNET,
-};
-
-const toHexString = (value: unknown): string =>
-  typeof value === 'string'
-    ? withHexPrefix(value)
-    : `0x${Buffer.from(value as Uint8Array).toString('hex')}`;
-
-/**
- * Owns everything shared across jobs for one environment: the address pool,
- * the arrival-rate limiter, the job store, and the Sepolia client.
- *
- * Kept per-environment rather than per-request so the derived addresses (and
- * their funding) persist, and so every job in an environment waits on the same
- * `ChainSignatureContract` instance.
- */
 /** Raised at a phase boundary when the process is shutting down. */
 class ShutdownError extends Error {
   constructor() {
@@ -61,36 +39,71 @@ export class BidirectionalService {
   readonly limiter: RateLimiter;
   private readonly client: PublicClient;
   private addressesReady?: Promise<void>;
+  private sourceReady?: Promise<BidirectionalSource>;
+  readonly maxActiveJobs: number;
+  readonly maxAwaitingRespond: number;
+  readonly maxRequestsPerMinute: number;
 
   constructor(
-    readonly environment: SolanaEnvironment,
-    rpcUrl: string
+    readonly environment: BidirectionalEnvironment,
+    rpcUrl: string,
+    readonly sourceChain: SourceChain = 'solana'
   ) {
+    if (!isSourceEnvironment(sourceChain, environment)) {
+      throw new Error(
+        `Unsupported source/environment: ${sourceChain}/${environment}`
+      );
+    }
     const { bidirectional } = env;
     // Mainnet settles on real Ethereum, so its limits are fixed here rather
     // than read from configuration: one address, one job a minute. It exists
     // to answer whether signing and responding still work, and a setting meant
     // for a testnet load run must not be able to point volume at it.
     const isMainnet = environment === 'mainnet';
+    const serialized = isMainnet || sourceChain === 'midnight';
+    this.maxActiveJobs = serialized ? 1 : bidirectional.maxActiveJobs;
+    this.maxAwaitingRespond = isMainnet ? 2 : bidirectional.maxJobs;
+    this.maxRequestsPerMinute = serialized
+      ? 1
+      : bidirectional.maxRequestsPerMinute;
     this.pool = new WorkerPool(
-      buildPaths(bidirectional.pathPrefix, isMainnet ? 1 : bidirectional.paths)
+      buildPaths(bidirectional.pathPrefix, serialized ? 1 : bidirectional.paths)
     );
     this.jobs = new JobStore(
-      isMainnet ? 2 : bidirectional.maxJobs,
+      this.maxAwaitingRespond,
       bidirectional.retainedJobs,
-      isMainnet ? 1 : bidirectional.maxActiveJobs
+      this.maxActiveJobs
     );
-    this.limiter = new RateLimiter(
-      isMainnet ? 1 : bidirectional.maxRequestsPerMinute
-    );
+    this.limiter = new RateLimiter(this.maxRequestsPerMinute);
     this.client = createEthereumClient(environment, rpcUrl);
   }
 
-  private solana() {
-    return getSharedSolana({
-      contractAddress: contractAddresses[this.environment],
-      environment: this.environment,
+  private source(): Promise<BidirectionalSource> {
+    this.sourceReady ??= (
+      this.sourceChain === 'solana'
+        ? Promise.resolve(
+            createSolanaSource(
+              this.environment as 'dev' | 'testnet' | 'mainnet'
+            )
+          )
+        : import('../midnight/source.mjs').then(m =>
+            m.createMidnightSource(this.environment, this.client)
+          )
+    ).catch(error => {
+      this.sourceReady = undefined;
+      throw error;
     });
+    return this.sourceReady;
+  }
+
+  async assertReady(): Promise<void> {
+    // An active job owns its pending request; capacity still blocks another job.
+    if (this.jobs.activeCount > 0) return;
+    await (await this.source()).assertReady?.();
+  }
+
+  async close(): Promise<void> {
+    if (this.sourceReady) await (await this.sourceReady).close?.();
   }
 
   /**
@@ -99,17 +112,18 @@ export class BidirectionalService {
    * transaction that silently never mines half an hour later.
    */
   async ensureAddresses(): Promise<void> {
+    // Recovery state can change after addresses have been derived and cached.
+    await this.assertReady();
     // The in-flight promise is memoized rather than a completion flag: a burst
     // of jobs at start would otherwise each run the whole derivation loop
     // before any of them finished setting the flag.
     this.addressesReady ??= (async () => {
-      const { chainSigContract, keypair } = this.solana();
-      const derived = await deriveWorkerAddresses({
-        chainSigContract,
-        client: this.client,
-        requester: keypair.publicKey.toString(),
-        paths: this.pool.all().map(w => w.path),
-      });
+      const derived = await (
+        await this.source()
+      ).deriveWorkers(
+        this.client,
+        this.pool.all().map(w => w.path)
+      );
       for (const { path, address } of derived) {
         this.pool.setAddress(path, address);
       }
@@ -176,7 +190,7 @@ export class BidirectionalService {
 
   /** Accepts a job and runs it in the background. */
   start(mode: TxMode): JobRecord {
-    const job = this.jobs.create(this.environment, mode);
+    const job = this.jobs.create(this.environment, mode, this.sourceChain);
     void this.run(job).catch(error => {
       if (error instanceof ShutdownError) {
         this.jobs.fail(job.id, 'shutdown', error);
@@ -205,7 +219,6 @@ export class BidirectionalService {
 
   private async run(job: JobRecord): Promise<void> {
     const { bidirectional } = env;
-    const { chainSigContract, provider, keypair } = this.solana();
     let worker: Worker | undefined;
     let leaseReleased = false;
     // Both event waits are registered before the transaction is broadcast, but
@@ -218,11 +231,14 @@ export class BidirectionalService {
 
     // The controller's signal only reaches the event waits, which are created
     // well into the run. Shutdown arriving during derivation, the preflight, or
-    // the Solana send would otherwise be ignored, and those RPC calls keep the
+    // the source send would otherwise be ignored, and those RPC calls keep the
     // process alive past its grace period. Checked between phases instead:
     // in-flight requests cannot be cancelled, but no further work starts.
     const abortIfShuttingDown = () => {
-      if (watches.signal.aborted) {
+      if (
+        watches.signal.aborted &&
+        watches.signal.reason instanceof ShutdownError
+      ) {
         throw new ShutdownError();
       }
     };
@@ -304,101 +320,57 @@ export class BidirectionalService {
         return;
       }
 
-      // --- Steps 3-4: request id ------------------------------------------
-      const requestId = contracts.solana.getRequestIdBidirectional({
-        sender: keypair.publicKey.toString(),
-        payload: Array.from(Buffer.from(built.rlpEncoded.slice(2), 'hex')),
-        caip2Id: ETHEREUM_CAIP2_ID,
-        keyVersion: KEY_VERSION,
-        path: worker.path,
-        algo: 'ECDSA',
-        dest: 'ethereum',
-        params: '',
-      });
-      this.jobs.update(job.id, { requestId, nonce: built.nonce });
-
-      // --- Step 5: send sign_bidirectional --------------------------------
-      abortIfShuttingDown(); // before the Solana send
-      const instruction = await buildSignBidirectionalInstruction({
-        chainSigContract,
-        requester: keypair.publicKey,
-        feePayer: keypair.publicKey,
-        args: {
-          serializedTransaction: Buffer.from(built.rlpEncoded.slice(2), 'hex'),
-          caip2Id: ETHEREUM_CAIP2_ID,
-          keyVersion: KEY_VERSION,
-          path: worker.path,
-          algo: 'ECDSA',
-          dest: 'ethereum',
-          params: '',
-          outputDeserializationSchema: built.outputDeserializationSchema,
-          respondSerializationSchema: built.respondSerializationSchema,
-        },
-      });
-
-      const transaction = new Transaction()
-        .add(ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }))
-        .add(instruction);
-      const solanaTx = await provider.sendAndConfirm(transaction, []);
-      this.jobs.update(job.id, {
-        state: 'sign_sent',
-        solanaTx,
-        timings: { signSentAt: Date.now() },
-      });
-
-      // --- Step 6 and 9: both waits start now -----------------------------
-      // The respond watcher is registered before broadcasting so a fast
-      // respond cannot land in the gap between confirmation and subscription.
-      const signer = new PublicKey(contractAddresses[this.environment]);
-      const signaturePromise = chainSigContract.waitForEvent({
-        eventName: 'signatureRespondedEvent',
-        requestId,
-        signer,
-        afterSignature: solanaTx,
-        timeoutMs: bidirectional.signatureTimeoutMs,
-        backfillIntervalMs: 15_000,
-        healthCheckIntervalMs: 15_000,
+      abortIfShuttingDown();
+      this.jobs.update(job.id, { nonce: built.nonce });
+      const submitted = await (
+        await this.source()
+      ).submit({
+        built,
+        worker,
         signal: watches.signal,
-      });
-      // Registered now so a fast respond cannot land in a gap, but the respond
-      // leg cannot even begin until the Ethereum transaction is confirmed. Its
-      // own budget therefore starts at confirmation, below; the watcher itself
-      // is given the whole worst-case span so it can never expire first. With
-      // the defaults, leaving it at the respond budget alone meant fifteen
-      // minutes of slow signing and confirmation could eat the slack over
-      // Ethereum's finality window and fail a healthy round trip.
-      const respondPromise = chainSigContract.waitForEvent({
-        eventName: 'respondBidirectionalEvent',
-        requestId,
-        signer,
-        afterSignature: solanaTx,
-        timeoutMs:
+        onProgress: progress => {
+          // A timeout ends the job's wait, not an accepted source operation.
+          // Late identifiers enrich the terminal record without reviving it.
+          this.jobs.update(job.id, {
+            ...(progress.requestId !== undefined
+              ? { requestId: progress.requestId }
+              : {}),
+            ...(progress.sourceTx !== undefined
+              ? { sourceTx: progress.sourceTx }
+              : {}),
+            ...(progress.nonce !== undefined ? { nonce: progress.nonce } : {}),
+          });
+        },
+        signatureTimeoutMs: bidirectional.signatureTimeoutMs,
+        responseTimeoutMs:
           bidirectional.signatureTimeoutMs +
           bidirectional.ethConfirmTimeoutMs +
           bidirectional.respondTimeoutMs,
-        // Polled far less often than the signature leg. This one waits on
-        // Ethereum finality, so nothing can arrive for tens of minutes, and
-        // the interval is multiplied by every live job: the websocket
-        // subscription still delivers promptly, backfill is only the fallback.
-        backfillIntervalMs: 120_000,
-        healthCheckIntervalMs: 60_000,
-        signal: watches.signal,
       });
-      // Nothing awaits this until step 9; without a no-op handler a timeout
-      // there would surface as an unhandled rejection first.
+      const signaturePromise = submitted.signature;
+      const respondPromise = submitted.response;
+      signaturePromise.catch(() => undefined);
       respondPromise.catch(() => undefined);
+      this.jobs.update(job.id, {
+        requestId: submitted.requestId,
+        nonce: built.nonce,
+        sourceTx: submitted.sourceTx,
+        ...(this.sourceChain === 'solana'
+          ? { solanaTx: submitted.sourceTx }
+          : {}),
+        state: 'sign_sent',
+        timings: { signSentAt: Date.now() },
+      });
+      abortIfShuttingDown();
 
       this.jobs.update(job.id, { state: 'awaiting_signature' });
 
       let rsv;
       try {
         rsv = await signaturePromise;
+        abortIfShuttingDown();
       } catch (error) {
-        // signet.js exposes a signatureErrorEvent, but the Solana program does
-        // not define or emit one, so silence is the only failure signal the
-        // network gives and a timeout is the whole story. Watching for it
-        // would add a third subscription per job for an event that never
-        // arrives.
+        abortIfShuttingDown();
         this.jobs.fail(job.id, 'signature_timeout', error);
         return;
       }
@@ -418,6 +390,7 @@ export class BidirectionalService {
       this.jobs.update(job.id, { state: 'verified' });
 
       // --- Step 8: broadcast and confirm ----------------------------------
+      abortIfShuttingDown();
       let ethTxHash: Hex;
       try {
         ethTxHash = await this.client.sendRawTransaction({
@@ -429,6 +402,7 @@ export class BidirectionalService {
         // broadcast, since reusing the nonce on that assumption is the one
         // outcome that cannot be undone.
         this.pool.quarantine(worker.path, built.nonce);
+        abortIfShuttingDown();
         this.jobs.fail(job.id, 'broadcast_failed', error);
         return;
       }
@@ -450,10 +424,12 @@ export class BidirectionalService {
         // reports the old nonce while the transaction is pending, so handing
         // this address to another job would sign the same nonce twice.
         this.pool.quarantine(worker.path, built.nonce);
+        abortIfShuttingDown();
         this.jobs.fail(job.id, 'confirmation_timeout', error);
         return;
       }
 
+      abortIfShuttingDown();
       if (receipt.status !== 'success') {
         this.jobs.fail(
           job.id,
@@ -468,9 +444,9 @@ export class BidirectionalService {
         timings: { confirmedAt: Date.now() },
       });
 
-      // The nonce is spent and the transaction is buried; the address can take
-      // the next job while this one waits out the MPC's finality window.
-      releaseLease();
+      // Solana can reuse the spent nonce during finality. Midnight retains
+      // the lease until settlement because its caller and wallet are shared.
+      if (this.sourceChain === 'solana') releaseLease();
 
       // The respond budget runs from here, not from registration. Aborting is
       // safe: the signature wait has already settled, so only the respond
@@ -494,14 +470,16 @@ export class BidirectionalService {
       let respond;
       try {
         respond = await respondPromise;
+        abortIfShuttingDown();
       } catch (error) {
+        abortIfShuttingDown();
         this.jobs.fail(job.id, 'respond_timeout', error);
         return;
       } finally {
         clearTimeout(respondDeadline);
       }
 
-      const serializedOutput = toHexString(respond.serializedOutput);
+      const serializedOutput = respond;
       this.jobs.update(job.id, {
         serializedOutput,
         timings: { respondedAt: Date.now() },
@@ -522,6 +500,9 @@ export class BidirectionalService {
         state: 'responded',
         timings: { finishedAt: Date.now() },
       });
+    } catch (error) {
+      abortIfShuttingDown();
+      throw error;
     } finally {
       releaseLease();
       // No-op once both have settled; tears down the subscriptions otherwise.
@@ -544,7 +525,7 @@ const activeJobs = new Set<AbortController>();
 /** Abandon every in-flight job. Their records stay, marked failed. */
 export const abortActiveJobs = (): number => {
   const count = activeJobs.size;
-  for (const controller of activeJobs) controller.abort();
+  for (const controller of activeJobs) controller.abort(new ShutdownError());
   activeJobs.clear();
   // Jobs parked waiting for an address would otherwise sit until their wait
   // expired, holding the process open past its grace period.
@@ -557,13 +538,15 @@ export const abortActiveJobs = (): number => {
 const services = new Map<string, BidirectionalService>();
 
 export const getService = (
-  environment: SolanaEnvironment,
-  rpcUrl: string
+  environment: BidirectionalEnvironment,
+  rpcUrl: string,
+  sourceChain: SourceChain = 'solana'
 ): BidirectionalService => {
-  const existing = services.get(environment);
+  const key = `${sourceChain}:${environment}`;
+  const existing = services.get(key);
   if (existing) return existing;
-  const service = new BidirectionalService(environment, rpcUrl);
-  services.set(environment, service);
+  const service = new BidirectionalService(environment, rpcUrl, sourceChain);
+  services.set(key, service);
   return service;
 };
 

@@ -52,7 +52,7 @@ const ENVIRONMENTS = {
 } as const;
 /** Intrinsic cost of a value transfer to an account with no code. */
 const PLAIN_TRANSFER_GAS = 21_000n;
-type Env = keyof typeof ENVIRONMENTS;
+type Env = keyof typeof ENVIRONMENTS | 'stagenet';
 
 /** A `--name value` argument, or the fallback. */
 function arg(name: string, fallback: string): string;
@@ -102,10 +102,13 @@ const crossCheck = async ({
 }): Promise<void> => {
   let reported: { path: string; address: string }[];
   try {
-    const res = await fetch(`${url}/sign_bidirectional/workers?env=${env}`, {
-      headers: { 'x-api-secret': secret },
-      signal: AbortSignal.timeout(10_000),
-    });
+    const res = await fetch(
+      `${url}/sign_bidirectional/workers?env=${env}&sourceChain=${env === 'stagenet' ? 'midnight' : 'solana'}`,
+      {
+        headers: { 'x-api-secret': secret },
+        signal: AbortSignal.timeout(10_000),
+      }
+    );
     if (!res.ok) {
       console.log(
         `  ${env}: service returned ${res.status}, skipping cross-check`
@@ -132,10 +135,10 @@ const crossCheck = async ({
   }
   for (const [path, address] of mine) {
     const other = theirs.get(path);
-    if (other && other !== address) {
+    if (other !== address) {
       differences.push(
         `${path}: this run derived ${address}, the service reports ${other} — ` +
-          'SIG_SOL_ROOT_PUBLIC_KEY or the requester key disagree'
+          'worker path, MPC root key or requester/caller address disagree'
       );
     }
   }
@@ -156,14 +159,26 @@ const main = async () => {
   // govern a run, and a separate process per environment would enforce each cap
   // against its own total — letting the combined spend reach a multiple of the
   // figure that was set.
-  const envs = (arg('env', 'testnet') ?? 'testnet')
+  const sourceChain = arg('source-chain', 'solana');
+  if (sourceChain !== 'solana' && sourceChain !== 'midnight')
+    fail('Invalid --source-chain');
+  const envs = arg('env', sourceChain === 'midnight' ? 'stagenet' : 'testnet')
     .split(',')
     .map(e => e.trim())
     .filter(Boolean) as Env[];
+  if (
+    sourceChain === 'midnight' &&
+    envs.some(network => network !== 'stagenet')
+  )
+    fail('Midnight supports only --env stagenet');
+  if (flag('include-midnight') && !envs.includes('stagenet'))
+    envs.push('stagenet');
+  if (!envs.length || new Set(envs).size !== envs.length)
+    fail('Choose at least one distinct environment');
   for (const env of envs) {
-    if (!(env in ENVIRONMENTS)) {
+    if (!(env in ENVIRONMENTS) && env !== 'stagenet') {
       fail(
-        `--env values must be among: ${Object.keys(ENVIRONMENTS).join(', ')}`
+        `--env values must be among: ${[...Object.keys(ENVIRONMENTS), 'stagenet'].join(', ')}`
       );
     }
   }
@@ -191,11 +206,13 @@ const main = async () => {
   // worker address follows from it. Configuring it separately would mean two
   // places that can disagree, and disagreeing means funding addresses no job
   // will ever spend from while the real pool runs dry.
-  const derivedRequester = env.solSk
-    ? Keypair.fromSecretKey(
-        new Uint8Array(JSON.parse(env.solSk))
-      ).publicKey.toBase58()
-    : undefined;
+  const needsSolana = envs.some(network => network !== 'stagenet');
+  const derivedRequester =
+    needsSolana && env.solSk
+      ? Keypair.fromSecretKey(
+          new Uint8Array(JSON.parse(env.solSk))
+        ).publicKey.toBase58()
+      : undefined;
 
   // Optional, and only ever a check. Set it when this runs against a service
   // holding a different key — a mismatch then fails the run instead of
@@ -214,14 +231,14 @@ const main = async () => {
   }
 
   const requester = derivedRequester ?? expectedRequester;
-  if (!requester) {
+  if (needsSolana && !requester) {
     fail(
       'Set SIG_SOL_SK to the key the service signs with (the requester is its ' +
         'public key), or SIG_BIDIRECTIONAL_REQUESTER_PUBKEY to that public key directly'
     );
   }
 
-  new PublicKey(requester); // rejects a malformed value before anything is sent
+  if (requester) new PublicKey(requester); // rejects a malformed value before anything is sent
 
   // --- safety limits ------------------------------------------------------
   //
@@ -277,13 +294,15 @@ const main = async () => {
 
   // --- derive, locally ----------------------------------------------------
   const solanaRpc = env.solRpcUrlDevnet;
-  if (!solanaRpc) fail('SIG_SOL_RPC_URL_DEV is not set');
+  if (needsSolana && !solanaRpc) fail('SIG_SOL_RPC_URL_DEV is not set');
 
-  const provider = new anchor.AnchorProvider(
-    new Connection(solanaRpc, 'confirmed'),
-    new anchor.Wallet(Keypair.generate()),
-    {}
-  );
+  const provider = needsSolana
+    ? new anchor.AnchorProvider(
+        new Connection(solanaRpc, 'confirmed'),
+        new anchor.Wallet(Keypair.generate()),
+        {}
+      )
+    : undefined;
 
   const client = createEthereumClient(envs[0], rpcUrl);
   const chainId = await client.getChainId();
@@ -294,6 +313,15 @@ const main = async () => {
 
   const workers: (DerivedWorker & { env: Env })[] = [];
   for (const env of envs) {
+    if (env === 'stagenet') {
+      const { deriveMidnightWorkers } =
+        await import('../src/midnight/derivation.mjs');
+      const derived = deriveMidnightWorkers(buildPaths(pathPrefix, 1));
+      workers.push(...derived.map(d => ({ ...d, env })));
+      continue;
+    }
+    if (!provider || !requester)
+      fail('Solana derivation is missing its provider or requester');
     const programId = constants.CONTRACT_ADDRESSES.SOLANA[ENVIRONMENTS[env]];
     // Built through the service's own constructor, not a local equivalent.
     // That is where SIG_SOL_ROOT_PUBLIC_KEY is applied: a contract assembled
@@ -336,10 +364,11 @@ const main = async () => {
 
   const account = privateKeyToAccount(withHexPrefix(fundingKey));
 
-  console.log(`requester   : ${requester}`);
-  console.log(
-    `root key    : ${env.solRootPublicKey ? 'SIG_SOL_ROOT_PUBLIC_KEY override' : 'paired to the program address'}`
-  );
+  if (needsSolana) console.log(`Solana requester: ${requester}`);
+  if (needsSolana)
+    console.log(
+      `root key    : ${env.solRootPublicKey ? 'SIG_SOL_ROOT_PUBLIC_KEY override' : 'paired to the program address'}`
+    );
   console.log(`funding from: ${account.address}`);
   console.log(
     `band        : ${formatEther(minBalance)} → ${formatEther(topUpTo)} ETH` +

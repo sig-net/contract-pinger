@@ -20,6 +20,7 @@ import { env } from '../src/utils/env';
 interface Options {
   jobs: number;
   env: string;
+  sourceChain: string;
   mode: string;
   url: string;
   secret: string;
@@ -33,7 +34,13 @@ const parseArgs = (argv: string[]): Options => {
   };
   return {
     jobs: Number(get('jobs', '10')),
-    env: get('env', env.bidirectional.e2eEnv),
+    sourceChain: get('source-chain', 'solana'),
+    env: get(
+      'env',
+      get('source-chain', 'solana') === 'midnight'
+        ? 'stagenet'
+        : env.bidirectional.e2eEnv
+    ),
     mode: get('mode', env.bidirectional.txMode),
     url: get('url', `http://localhost:${env.port}`),
     // Environment only. A secret passed as an argument is visible in `ps`
@@ -78,7 +85,7 @@ const main = async () => {
   const started = Date.now();
 
   console.log(
-    `Driving ${opts.jobs} × ${opts.mode} against ${opts.url} (${opts.env})\n`
+    `Driving ${opts.jobs} × ${opts.mode} against ${opts.url} (${opts.sourceChain}/${opts.env})\n`
   );
 
   // --- Submit -------------------------------------------------------------
@@ -91,7 +98,11 @@ const main = async () => {
     const res = await fetch(`${opts.url}/sign_bidirectional`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ env: opts.env, mode: opts.mode }),
+      body: JSON.stringify({
+        env: opts.env,
+        mode: opts.mode,
+        sourceChain: opts.sourceChain,
+      }),
     });
 
     if (res.status === 429) {
@@ -223,7 +234,7 @@ const main = async () => {
   }
 
   const stats = await fetch(
-    `${opts.url}/sign_bidirectional/stats?env=${opts.env}`,
+    `${opts.url}/sign_bidirectional/stats?env=${encodeURIComponent(opts.env)}&sourceChain=${encodeURIComponent(opts.sourceChain)}`,
     { headers }
   );
   if (stats.ok) {

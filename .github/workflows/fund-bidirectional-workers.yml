@@ -54,6 +54,11 @@ on:
         required: false
         default: ''
         type: string
+      include_midnight:
+        description: Include the dedicated Midnight stagenet worker in the same spend cap
+        required: false
+        default: false
+        type: boolean
       dry_run:
         description: Report what would be sent, send nothing
         required: false
@@ -97,6 +102,8 @@ jobs:
       # Must match the deployed service. Unset there and unset here both mean
       # "pair the root key to the program address"; set on one side only
       # derives a different address set entirely.
+      MPC_MIDNIGHT_CALLER_ADDRESS: ${{ vars.MPC_MIDNIGHT_CALLER_ADDRESS }}
+      MPC_MIDNIGHT_ROOT_PUBLIC_KEY: ${{ vars.MPC_MIDNIGHT_ROOT_PUBLIC_KEY }}
       SIG_SOL_ROOT_PUBLIC_KEY: ${{ vars.SIG_SOL_ROOT_PUBLIC_KEY }}
       # Thresholds are variables, not constants: the right band depends on the
       # measured gas of the enabled transaction mode and on how long a pool
@@ -152,6 +159,7 @@ jobs:
         run: |
           set -euo pipefail
           args=(--env "${ENV}")
+          if [ "${INCLUDE_MIDNIGHT}" = 'true' ]; then args+=(--include-midnight); fi
           # Blank on the schedule and by default: every address below the
           # default target is filled to it. Given a figure, that is the target
           # instead — the same switch the ad hoc load test uses to fund for a
@@ -160,6 +168,7 @@ jobs:
           if [ "${DRY_RUN}" = 'true' ]; then args+=(--dry-run); fi
           pnpm fund "${args[@]}"
         env:
+          INCLUDE_MIDNIGHT: ${{ github.event_name == 'schedule' && vars.LT_MIDNIGHT_ENABLED == 'true' || inputs.include_midnight }}
           ENV: ${{ inputs.env || 'dev,testnet' }}
           TOPUP: ${{ inputs.topup }}
           DRY_RUN: ${{ inputs.dry_run }}

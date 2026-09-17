@@ -16,6 +16,12 @@ import {
   type BidirectionalEnvironment,
 } from './utils/bidirectionalTx';
 import { env } from './utils/env';
+import {
+  SOURCE_CHAINS,
+  SOURCE_ENVIRONMENTS,
+  isSourceChain,
+  isSourceEnvironment,
+} from './utils/bidirectionalSource';
 
 // Asserted here rather than in the schema: this is the server's requirement,
 // and the scripts share that config without serving anything.
@@ -140,14 +146,21 @@ app.post(
   }
 );
 
-const bidirectionalEnvironments = ['dev', 'testnet', 'mainnet'] as const;
-
-const resolveBidirectionalService = (network: unknown) => {
-  if (
-    typeof network !== 'string' ||
-    !(bidirectionalEnvironments as readonly string[]).includes(network)
-  ) {
-    return { error: 'Invalid or missing environment parameter' as const };
+const resolveBidirectionalService = (
+  network: unknown,
+  source: unknown = 'solana'
+) => {
+  if (!isSourceChain(source)) {
+    return {
+      error: 'Invalid sourceChain parameter',
+      validSourceChains: SOURCE_CHAINS,
+    };
+  }
+  if (!isSourceEnvironment(source, network)) {
+    return {
+      error: 'Invalid or missing environment parameter',
+      validEnvironments: SOURCE_ENVIRONMENTS[source],
+    };
   }
   // Each network settles on its own Ethereum, so the RPC follows the target
   // rather than being fixed to Sepolia.
@@ -158,10 +171,7 @@ const resolveBidirectionalService = (network: unknown) => {
     };
   }
   return {
-    service: getBidirectionalService(
-      network as 'dev' | 'testnet' | 'mainnet',
-      rpcUrl
-    ),
+    service: getBidirectionalService(network, rpcUrl, source),
   };
 };
 
@@ -169,7 +179,7 @@ app.post(
   '/sign_bidirectional',
   async (req: express.Request, res: express.Response): Promise<void> => {
     try {
-      const { env: network, mode } = req.body ?? {};
+      const { env: network, mode, sourceChain } = req.body ?? {};
 
       // Mode is validated before the service is resolved so a bad mode always
       // reports itself, rather than being masked by a missing RPC URL.
@@ -181,16 +191,26 @@ app.post(
         return;
       }
 
-      const resolved = resolveBidirectionalService(network);
+      const resolved = resolveBidirectionalService(network, sourceChain);
       if ('error' in resolved) {
         res.status(400).json({
-          error: resolved.error,
-          validEnvironments: bidirectionalEnvironments,
+          ...resolved,
         });
         return;
       }
 
       const { service } = resolved;
+      if (service.sourceChain === 'midnight') {
+        try {
+          await service.assertReady();
+        } catch (error) {
+          res.status(503).json({
+            error: 'Midnight source requires attention before accepting jobs',
+            details: error instanceof Error ? error.message : String(error),
+          });
+          return;
+        }
+      }
 
       // Capacity is checked before the rate limiter so a rejected request does
       // not consume an arrival slot. Once the job store is full it drains over
@@ -202,7 +222,6 @@ app.post(
         // Named rather than merged: an active rejection means the address pool
         // or chain throughput is the limit, and a respond rejection means the
         // subscription ceiling is. They call for different remedies.
-        const { bidirectional } = env;
         const retryAfterMs = full === 'active' ? 15_000 : 60_000;
         res
           .status(429)
@@ -214,9 +233,9 @@ app.post(
                 : 'Too many jobs awaiting the MPC respond',
             limit: full,
             activeJobs: service.jobs.activeCount,
-            maxActiveJobs: bidirectional.maxActiveJobs,
+            maxActiveJobs: service.maxActiveJobs,
             awaitingRespond: service.jobs.awaitingRespondCount,
-            maxAwaitingRespond: bidirectional.maxJobs,
+            maxAwaitingRespond: service.maxAwaitingRespond,
             retryAfterMs,
           });
         return;
@@ -233,7 +252,7 @@ app.post(
           .set('Retry-After', String(Math.ceil(retryAfterMs / 1000)))
           .json({
             error: 'Rate limit exceeded',
-            limitPerMinute: env.bidirectional.maxRequestsPerMinute,
+            limitPerMinute: service.maxRequestsPerMinute,
             retryAfterMs,
           });
         return;
@@ -244,8 +263,14 @@ app.post(
         jobId: job.id,
         env: network,
         mode: txMode,
+        sourceChain: service.sourceChain,
       });
-      res.status(202).json({ jobId: job.id, state: job.state, mode: txMode });
+      res.status(202).json({
+        jobId: job.id,
+        state: job.state,
+        mode: txMode,
+        sourceChain: service.sourceChain,
+      });
     } catch (error) {
       console.error('sign_bidirectional endpoint error:', error);
       res.status(500).json({
@@ -261,7 +286,9 @@ app.get(
   async (req: express.Request, res: express.Response): Promise<void> => {
     try {
       const resolved = resolveBidirectionalService(
-        (req.query.env as string) || 'dev'
+        req.query.env ??
+          (req.query.sourceChain === 'midnight' ? 'stagenet' : 'dev'),
+        req.query.sourceChain
       );
       if ('error' in resolved) {
         res.status(400).json({ error: resolved.error });
@@ -271,6 +298,8 @@ app.get(
       await service.ensureAddresses();
       await service.refreshBalances();
       res.json({
+        sourceChain: service.sourceChain,
+        environment: service.environment,
         workers: service.pool.all().map(w => ({
           path: w.path,
           address: w.address,
@@ -296,7 +325,9 @@ app.get(
   '/sign_bidirectional/stats',
   (req: express.Request, res: express.Response): void => {
     const resolved = resolveBidirectionalService(
-      (req.query.env as string) || 'dev'
+      req.query.env ??
+        (req.query.sourceChain === 'midnight' ? 'stagenet' : 'dev'),
+      req.query.sourceChain
     );
     if ('error' in resolved) {
       res.status(400).json({ error: resolved.error });
@@ -415,6 +446,11 @@ if (require.main === module) {
     const abandoned = abortActiveJobs();
     if (abandoned > 0) {
       console.log(`Abandoned ${abandoned} in-flight bidirectional job(s)`);
+    }
+    for (const service of listBidirectionalServices()) {
+      void service
+        .close()
+        .catch(error => console.error('Source shutdown failed:', error));
     }
     server?.close(() => {
       console.log('HTTP server closed');

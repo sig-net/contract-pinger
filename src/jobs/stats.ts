@@ -89,6 +89,7 @@ export const buildStats = (service: BidirectionalService) => {
 
   return {
     environment: service.environment,
+    sourceChain: service.sourceChain,
     jobs: {
       total: jobs.length,
       active: service.jobs.activeCount,

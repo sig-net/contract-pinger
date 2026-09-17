@@ -28,7 +28,8 @@ export const isTxMode = (value: unknown): value is TxMode =>
 export const ETHEREUM_CAIP2_ID = 'eip155:1';
 export const KEY_VERSION = 1;
 
-export type BidirectionalEnvironment = 'dev' | 'testnet' | 'mainnet';
+export type BidirectionalEnvironment =
+  'dev' | 'testnet' | 'mainnet' | 'stagenet';
 
 const SEPOLIA_CHAIN_ID = 11155111;
 const MAINNET_CHAIN_ID = 1;
@@ -55,6 +56,12 @@ export const ETHEREUM_TARGETS = {
     erc20: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
   },
   testnet: {
+    chain: sepolia,
+    chainId: SEPOLIA_CHAIN_ID,
+    rpcUrl: () => env.ethRpcUrlSepolia,
+    erc20: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
+  },
+  stagenet: {
     chain: sepolia,
     chainId: SEPOLIA_CHAIN_ID,
     rpcUrl: () => env.ethRpcUrlSepolia,
