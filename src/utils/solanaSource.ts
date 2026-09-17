@@ -38,6 +38,7 @@ export const createSolanaSource = (
       built,
       worker,
       signal,
+      onProgress,
       signatureTimeoutMs,
       responseTimeoutMs,
     }) {
@@ -53,6 +54,7 @@ export const createSolanaSource = (
         dest: 'ethereum',
         params: '',
       });
+      onProgress?.({ requestId });
       const instruction = await buildSignBidirectionalInstruction({
         chainSigContract,
         requester: keypair.publicKey,
@@ -74,6 +76,7 @@ export const createSolanaSource = (
         .add(ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }))
         .add(instruction);
       const sourceTx = await provider.sendAndConfirm(transaction, []);
+      onProgress?.({ sourceTx });
       signal.throwIfAborted();
       const signer = new PublicKey(contractAddresses[environment]);
       const signature = chainSigContract.waitForEvent({

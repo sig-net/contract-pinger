@@ -317,26 +317,33 @@ describe('Midnight request producer and completion', () => {
     }
   );
 
-  it('consumes an authenticated false return value', async () => {
-    const { contract, context } = await deploy();
-    const submitted = await contract.circuits.submitNative(
-      context,
-      native,
-      derivationPath
-    );
-    const output = new Uint8Array([0]);
-    const completed = await contract.circuits.completeNative(
-      submitted.context,
-      submitted.result,
-      attestation(submitted.result, output),
-      output
-    );
-    expect(
-      ledger(
+  it.each(['native', 'erc20'] as const)(
+    'consumes an authenticated false %s return value',
+    async mode => {
+      const { contract, context } = await deploy();
+      const submitted = await contract.circuits[
+        mode === 'native' ? 'submitNative' : 'submitErc20'
+      ](context, mode === 'native' ? native : token, derivationPath);
+      const output = new Uint8Array([0]);
+      const completed = await contract.circuits[
+        mode === 'native' ? 'completeNative' : 'completeErc20'
+      ](
+        submitted.context,
+        submitted.result,
+        attestation(submitted.result, output),
+        output
+      );
+      const after = ledger(
         completed.context.callContext.currentQueryContext.state
-      ).nativeRequests.isEmpty()
-    ).toBe(true);
-  });
+      );
+      expect(
+        (mode === 'native'
+          ? after.nativeRequests
+          : after.erc20Requests
+        ).isEmpty()
+      ).toBe(true);
+    }
+  );
 
   it('uses an independent request nonce for otherwise identical submits', async () => {
     const { contract, context } = await deploy();

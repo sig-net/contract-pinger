@@ -133,6 +133,57 @@ describe('Solana bidirectional source', () => {
     });
   });
 
+  it('reports the request before an ambiguous send failure without resubmitting', async () => {
+    const onProgress = vi.fn();
+    const failure = new Error('connection lost after send');
+    mock.sendAndConfirm.mockImplementationOnce(async () => {
+      expect(onProgress).toHaveBeenCalledOnce();
+      expect(onProgress.mock.calls[0][0].requestId).toEqual(expect.any(String));
+      throw failure;
+    });
+    await expect(
+      createSolanaSource('dev').submit({
+        built,
+        worker,
+        signal: new AbortController().signal,
+        onProgress,
+        signatureTimeoutMs: 100,
+        responseTimeoutMs: 600,
+      })
+    ).rejects.toBe(failure);
+    expect(onProgress).toHaveBeenCalledOnce();
+    expect(mock.sendAndConfirm).toHaveBeenCalledOnce();
+    expect(mock.waitForEvent).not.toHaveBeenCalled();
+  });
+
+  it('reports the accepted transaction before checking shutdown', async () => {
+    const controller = new AbortController();
+    const reason = new Error('shutdown');
+    const onProgress = vi.fn();
+    mock.sendAndConfirm.mockImplementationOnce(async () => {
+      controller.abort(reason);
+      return 'accepted-before-shutdown';
+    });
+    await expect(
+      createSolanaSource('dev').submit({
+        built,
+        worker,
+        signal: controller.signal,
+        onProgress,
+        signatureTimeoutMs: 100,
+        responseTimeoutMs: 600,
+      })
+    ).rejects.toBe(reason);
+    expect(onProgress).toHaveBeenNthCalledWith(1, {
+      requestId: expect.any(String),
+    });
+    expect(onProgress).toHaveBeenNthCalledWith(2, {
+      sourceTx: 'accepted-before-shutdown',
+    });
+    expect(mock.sendAndConfirm).toHaveBeenCalledOnce();
+    expect(mock.waitForEvent).not.toHaveBeenCalled();
+  });
+
   it('uses the source requester when deriving worker addresses', async () => {
     const client = {} as PublicClient;
     await createSolanaSource('dev').deriveWorkers(client, [

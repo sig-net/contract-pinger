@@ -565,40 +565,52 @@ describe('bidirectional source dispatch', () => {
     expect(mock.midnight.submit).not.toHaveBeenCalled();
   });
 
-  it('retains early and late submission progress without reviving a failed job', async () => {
-    type Progress = { requestId?: string; sourceTx?: string; nonce?: number };
-    let progress: ((value: Progress) => void) | undefined;
-    let nonceAtSubmission: number | undefined;
-    const diagnostic = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const service = new BidirectionalService(
-      'stagenet',
-      'http://localhost:8545',
-      'midnight'
-    );
-    mock.midnight.submit.mockImplementationOnce(
-      async (args: { onProgress?: (value: Progress) => void }) => {
-        nonceAtSubmission = job.nonce;
-        progress = args.onProgress;
-        progress?.({ requestId: 'prepared-request' });
-        throw new Error('Midnight request submission timed out');
-      }
-    );
-    const job = service.start('eth_self_transfer');
-    await vi.waitFor(() => expect(job.state).toBe('failed'));
-    expect(nonceAtSubmission).toBe(0);
-    expect(job.requestId).toBe('prepared-request');
-    expect(job.nonce).toBe(0);
-    const finishedAt = job.timings.finishedAt;
-    progress?.({ sourceTx: 'late-accepted-transaction' });
-    progress?.({ requestId: undefined, sourceTx: undefined, nonce: undefined });
-    expect(job.sourceTx).toBe('late-accepted-transaction');
-    expect(job.requestId).toBe('prepared-request');
-    expect(job.nonce).toBe(0);
-    expect(job.state).toBe('failed');
-    expect(job.failureReason).toBe('internal_error');
-    expect(job.timings.finishedAt).toBe(finishedAt);
-    diagnostic.mockRestore();
-  });
+  it.each(['solana', 'midnight'] as const)(
+    'retains early and late submission progress without reviving a failed job (%s)',
+    async source => {
+      type Progress = { requestId?: string; sourceTx?: string; nonce?: number };
+      let progress: ((value: Progress) => void) | undefined;
+      let nonceAtSubmission: number | undefined;
+      const diagnostic = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => {});
+      const service = new BidirectionalService(
+        source === 'solana' ? 'dev' : 'stagenet',
+        'http://localhost:8545',
+        source
+      );
+      mock[source].submit.mockImplementationOnce(
+        async (args: { onProgress?: (value: Progress) => void }) => {
+          nonceAtSubmission = job.nonce;
+          progress = args.onProgress;
+          progress?.({ requestId: 'prepared-request' });
+          throw new Error('Source request submission timed out');
+        }
+      );
+      const job = service.start('eth_self_transfer');
+      await vi.waitFor(() => expect(job.state).toBe('failed'));
+      expect(nonceAtSubmission).toBe(0);
+      expect(job.requestId).toBe('prepared-request');
+      expect(job.nonce).toBe(0);
+      const finishedAt = job.timings.finishedAt;
+      progress?.({ sourceTx: 'late-accepted-transaction' });
+      progress?.({
+        requestId: undefined,
+        sourceTx: undefined,
+        nonce: undefined,
+      });
+      expect(job.sourceTx).toBe('late-accepted-transaction');
+      expect(job.solanaTx).toBe(
+        source === 'solana' ? 'late-accepted-transaction' : undefined
+      );
+      expect(job.requestId).toBe('prepared-request');
+      expect(job.nonce).toBe(0);
+      expect(job.state).toBe('failed');
+      expect(job.failureReason).toBe('internal_error');
+      expect(job.timings.finishedAt).toBe(finishedAt);
+      diagnostic.mockRestore();
+    }
+  );
 
   it('rechecks source recovery readiness even with cached worker addresses', async () => {
     const service = new BidirectionalService(

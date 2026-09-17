@@ -17,7 +17,7 @@ class Exit extends Error {
     super('CLI exited');
   }
 }
-type Reply = [number, unknown];
+type Reply = [number, unknown] | Error;
 async function drive(args: string[], replies: Reply[], secret = 'test-secret') {
   const requests: {
     url: string;
@@ -26,6 +26,7 @@ async function drive(args: string[], replies: Reply[], secret = 'test-secret') {
     headers: unknown;
   }[] = [];
   const output: string[] = [];
+  const outputAtRequest: string[][] = [];
   const errors: unknown[][] = [];
   const sleeps: number[] = [];
   let now = 0;
@@ -61,6 +62,7 @@ async function drive(args: string[], replies: Reply[], secret = 'test-secret') {
       callback();
     },
     fetch: async (url: string, init: RequestInit = {}) => {
+      outputAtRequest.push([...output]);
       requests.push({
         url,
         method: init.method ?? 'GET',
@@ -69,6 +71,7 @@ async function drive(args: string[], replies: Reply[], secret = 'test-secret') {
       });
       const reply = replies.shift();
       if (!reply) throw new Error(`Unexpected request: ${url}`);
+      if (reply instanceof Error) throw reply;
       return new Response(JSON.stringify(reply[1]), { status: reply[0] });
     },
     run: async () => {},
@@ -82,7 +85,7 @@ async function drive(args: string[], replies: Reply[], secret = 'test-secret') {
     code = error.code;
   }
   expect(replies).toHaveLength(0);
-  return { code, requests, output, errors, sleeps };
+  return { code, requests, output, outputAtRequest, errors, sleeps };
 }
 
 function job(state: 'responded' | 'failed' | 'confirmed') {
@@ -141,8 +144,8 @@ it('submits all jobs before polling and preserves output, defaults, timings and 
   expect(run.sleeps).toEqual([15000]);
   expect(run.output).toEqual([
     'Driving 2 × eth_self_transfer against http://localhost:3001 (solana/testnet)\n',
-    '\r[00:00] submitted 1/2            ',
-    '\r[00:00] submitted 2/2            ',
+    '[00:00] accepted a (1/2)',
+    '[00:00] accepted b (2/2)',
     '\n\nAll 2 submitted in 00:00\nPolling to completion — the respond leg waits for Ethereum finality.\n',
     '[00:15] responded=2',
     '\n' + '='.repeat(60),
@@ -259,4 +262,52 @@ it('rejects missing credentials before requests and unsuccessful submissions bef
   expect(rejected.errors).toEqual([
     ['\nSubmit failed (400):', '{"error":"invalid mode"}'],
   ]);
+});
+
+it.each(['http', 'transport'] as const)(
+  'tracks accepted jobs after a later %s submission failure without retrying',
+  async failure => {
+    const run = await drive(
+      ['--jobs', '3', '--poll', '0'],
+      [
+        [202, { jobId: 'accepted-a' }],
+        [429, { retryAfterMs: 750 }],
+        failure === 'http'
+          ? [503, { error: 'requires reconciliation' }]
+          : new Error('connection reset'),
+        [200, job('confirmed')],
+        [200, job('responded')],
+        [503, {}],
+      ]
+    );
+    expect(run.code).toBe(1);
+    expect(run.requests.map(r => r.method)).toEqual([
+      'POST',
+      'POST',
+      'POST',
+      'GET',
+      'GET',
+      'GET',
+    ]);
+    expect(
+      run.requests.slice(3, 5).every(r => r.url.endsWith('/accepted-a'))
+    ).toBe(true);
+    expect(run.outputAtRequest[1]).toContain(
+      '[00:00] accepted accepted-a (1/3)'
+    );
+    expect(run.output).toContain('  succeeded  1/1');
+    expect(run.output).toContain('  failed     0/1');
+    expect(run.output.join('\n')).toContain('Stopped after 1/3 submissions');
+    expect(run.sleeps).toEqual([1000, 0, 0]);
+    expect(run.errors).toHaveLength(1);
+  }
+);
+
+it('exits without polling when the first POST throws and never retries it', async () => {
+  const failure = new Error('connection reset');
+  const run = await drive(['--jobs', '2'], [failure]);
+  expect(run.code).toBe(1);
+  expect(run.requests.map(r => r.method)).toEqual(['POST']);
+  expect(run.sleeps).toEqual([]);
+  expect(run.errors).toEqual([['\nSubmit failed:', failure]]);
 });

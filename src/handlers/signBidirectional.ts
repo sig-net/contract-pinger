@@ -320,7 +320,12 @@ export class BidirectionalService {
               ? { requestId: progress.requestId }
               : {}),
             ...(progress.sourceTx !== undefined
-              ? { sourceTx: progress.sourceTx }
+              ? {
+                  sourceTx: progress.sourceTx,
+                  ...(this.sourceChain === 'solana'
+                    ? { solanaTx: progress.sourceTx }
+                    : {}),
+                }
               : {}),
             ...(progress.nonce !== undefined ? { nonce: progress.nonce } : {}),
           });

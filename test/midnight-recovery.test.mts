@@ -15,14 +15,26 @@ import {
 } from '@midnight-ntwrk/midnight-js/types';
 import {
   MidnightNetwork,
+  requestIdBytes,
+  requestIdHex,
+  respondBidirectionalEventToCircuitInput,
   SignetRequestResponseReader,
 } from '@sig-net/midnight';
-import { ecdsaSignatureToMpcSignature } from '@sig-net/midnight/testing';
+import {
+  calculateSignetAttestationDigest,
+  deriveMidnightResponseSecretKey,
+  ecdsaSignatureToMpcSignature,
+  signAttestationDigest,
+} from '@sig-net/midnight/testing';
 import type {
   BidirectionalSource,
   SourceProgress,
 } from '../src/utils/bidirectionalSource.js';
-import type { BuiltTransaction } from '../src/utils/bidirectionalTx.js';
+import {
+  buildTransaction,
+  type BuiltTransaction,
+  type TxMode,
+} from '../src/utils/bidirectionalTx.js';
 import { createMidnightSource } from '../src/midnight/source.mjs';
 import { pendingRequestStore } from '../src/midnight/pending.mjs';
 import {
@@ -61,7 +73,7 @@ vi.mock(
   })
 );
 
-const requestId = '01'.repeat(32);
+const requestId = requestIdHex(new Uint8Array(32).fill(1));
 const sourceTx = '02'.repeat(32);
 const settlementTx = '03'.repeat(32);
 const node = {
@@ -165,6 +177,64 @@ function args() {
 }
 const record = () => pendingRequestStore(config.stateDirectory).read();
 
+function responsePost(output: number, id = requestId, rootScalar = 1) {
+  const secret = deriveMidnightResponseSecretKey(
+    new Uint8Array([...new Uint8Array(31), rootScalar]),
+    config.callerAddress!
+  );
+  return {
+    signature: ecdsaSignatureToMpcSignature(
+      signAttestationDigest(
+        calculateSignetAttestationDigest(
+          requestIdBytes(id),
+          Uint8Array.of(output)
+        ),
+        secret
+      )
+    ),
+  };
+}
+
+function authenticateResponses(posts: ReturnType<typeof responsePost>[]) {
+  vi.mocked(
+    SignetRequestResponseReader.prototype.getVerifiedRespondBidirectionalEvent
+  ).mockRestore();
+  vi.spyOn(
+    SignetRequestResponseReader.prototype,
+    'getRespondBidirectionalEvents'
+  ).mockResolvedValue(posts);
+}
+
+async function transactionArgs(mode: TxMode) {
+  const client = createPublicClient({
+    transport: http('http://unused.invalid'),
+  });
+  vi.spyOn(client, 'getTransactionCount').mockResolvedValue(built.nonce);
+  vi.spyOn(client, 'estimateFeesPerGas').mockResolvedValue({
+    maxFeePerGas: 2n,
+    maxPriorityFeePerGas: 1n,
+  });
+  vi.spyOn(client, 'estimateGas').mockResolvedValue(50000n);
+  const transaction = await buildTransaction({
+    client,
+    environment: 'stagenet',
+    mode,
+    from: worker.address,
+    erc20Address: '0x4444444444444444444444444444444444444444',
+  });
+  const signed = EvmTransaction.from(transaction.rlpEncoded);
+  signed.signature = new SigningKey('0x' + '07'.repeat(32)).sign(
+    signed.unsignedHash
+  );
+  vi.mocked(
+    SignetRequestResponseReader.prototype.getUnsignedEvmTransaction
+  ).mockResolvedValue(EvmTransaction.from(transaction.rlpEncoded));
+  vi.mocked(
+    SignetRequestResponseReader.prototype.getSignedEvmTransaction
+  ).mockResolvedValue(signed);
+  return { ...args(), built: transaction };
+}
+
 beforeEach(async () => {
   await mkdir(resolve('.midnight/tests'), { recursive: true });
   config = {
@@ -228,7 +298,8 @@ beforeEach(async () => {
       boundary({
         private: boundary({
           result: new Uint8Array(32).fill(1),
-          unprovenTx: (options.circuitId === 'submitNative'
+          unprovenTx: (options.circuitId === 'submitNative' ||
+          options.circuitId === 'submitErc20'
             ? initialTx
             : completeTx) as never,
           nextPrivateState: { secretKey: config.operatorSecret },
@@ -268,6 +339,110 @@ afterEach(async () => {
 });
 
 describe('Midnight request recovery journal', () => {
+  it.each([
+    ['eth_self_transfer', 1],
+    ['eth_self_transfer', 0],
+    ['erc20_zero_transfer', 1],
+    ['erc20_zero_transfer', 0],
+  ] as const)(
+    'settles authenticated %s output %i before releasing the journal',
+    async (mode, output) => {
+      const post = responsePost(output);
+      authenticateResponses([
+        responsePost(output, requestIdHex(new Uint8Array(32).fill(4))),
+        responsePost(output, requestId, 2),
+        responsePost(2),
+        post,
+      ]);
+      const settled = deferred(finalized(settlementTx));
+      vi.mocked(finalization.waitForMidnightTransaction).mockImplementation(
+        async (_node, txId) =>
+          txId === settlementTx ? settled.promise : finalized(txId)
+      );
+      const original = await source();
+      const submitted = await original.submit(await transactionArgs(mode));
+      await vi.waitFor(() => expect(networkSubmit).toHaveBeenCalledTimes(2));
+      expect(vi.mocked(createUnprovenCallTx).mock.calls[1]?.[1]).toMatchObject({
+        circuitId:
+          mode === 'eth_self_transfer' ? 'completeNative' : 'completeErc20',
+        args: [
+          requestIdBytes(requestId),
+          respondBidirectionalEventToCircuitInput(post),
+          Uint8Array.of(output),
+        ],
+      });
+      expect(await record()).toMatchObject({
+        requestId,
+        sourceTx,
+        settlementTx,
+      });
+      await expect(original.assertReady?.()).rejects.toThrow(
+        'requires reconciliation'
+      );
+      expect(privateSet).toHaveBeenCalledTimes(2);
+      let completed = false;
+      void submitted.response.then(() => {
+        completed = true;
+      });
+      await Promise.resolve();
+      expect(completed).toBe(false);
+      settled.resolve(finalized(settlementTx));
+      await expect(submitted.response).resolves.toBe(
+        output === 1 ? '0x01' : '0x00'
+      );
+      expect(await record()).toBeUndefined();
+      expect(privateSet).toHaveBeenCalledTimes(3);
+      await expect(original.assertReady?.()).resolves.toBeUndefined();
+    }
+  );
+
+  it('retains the request when posts authenticate neither supported boolean output', async () => {
+    authenticateResponses([
+      responsePost(0, requestIdHex(new Uint8Array(32).fill(4))),
+      responsePost(1, requestId, 2),
+      responsePost(2),
+    ]);
+    const original = await source();
+    const submitted = await original.submit(
+      await transactionArgs('erc20_zero_transfer')
+    );
+    const rejected = expect(submitted.response).rejects.toThrow('timed out');
+    await vi.advanceTimersByTimeAsync(1000);
+    await rejected;
+    expect(networkSubmit).toHaveBeenCalledOnce();
+    expect(await record()).toMatchObject({ requestId, sourceTx });
+    await expect(original.assertReady?.()).rejects.toThrow(
+      'requires reconciliation'
+    );
+  });
+
+  it.each([FailEntirely, FailFallible])(
+    'retains authenticated false output recovery when settlement finalizes with %s',
+    async status => {
+      authenticateResponses([responsePost(0)]);
+      vi.mocked(finalization.waitForMidnightTransaction).mockImplementation(
+        async (_node, txId) =>
+          finalized(txId, txId === settlementTx ? status : SucceedEntirely)
+      );
+      const original = await source();
+      const submitted = await original.submit(
+        await transactionArgs('erc20_zero_transfer')
+      );
+      await expect(submitted.response).rejects.toThrow(
+        'did not succeed entirely'
+      );
+      expect(await record()).toMatchObject({
+        requestId,
+        sourceTx,
+        settlementTx,
+      });
+      expect(privateSet).toHaveBeenCalledTimes(2);
+      await expect(original.assertReady?.()).rejects.toThrow(
+        'requires reconciliation'
+      );
+    }
+  );
+
   it('rejects a changed signing payload before reading signature responses', async () => {
     const changed = EvmTransaction.from(built.rlpEncoded);
     changed.nonce++;

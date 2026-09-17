@@ -14,7 +14,7 @@ import {
   respondBidirectionalEventToCircuitInput,
   SignetRequestResponseReader,
 } from '@sig-net/midnight';
-import type { Hex, PublicClient } from 'viem';
+import { toHex, type PublicClient } from 'viem';
 import type { BidirectionalEnvironment } from '../utils/bidirectionalTx.js';
 import type { BidirectionalSource } from '../utils/bidirectionalSource.js';
 import {
@@ -298,12 +298,20 @@ export async function createMidnightSource(
       );
       const response = pollVerified(
         async active => {
-          const output = Uint8Array.of(1);
-          const attestation = await reader.getVerifiedRespondBidirectionalEvent(
+          let output = Uint8Array.of(1);
+          let attestation = await reader.getVerifiedRespondBidirectionalEvent(
             requestId,
             output,
             responseKey
           );
+          if (!attestation) {
+            output = Uint8Array.of(0);
+            attestation = await reader.getVerifiedRespondBidirectionalEvent(
+              requestId,
+              output,
+              responseKey
+            );
+          }
           if (!attestation) return undefined;
           await lane.run(async () => {
             active.throwIfAborted();
@@ -329,7 +337,7 @@ export async function createMidnightSource(
             );
             await pending.clear(requestId);
           });
-          return '0x01' as Hex;
+          return toHex(output);
         },
         responseTimeoutMs,
         signal

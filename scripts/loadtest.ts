@@ -69,44 +69,53 @@ const main = async () => {
 
   const jobIds: string[] = [];
   let rateLimited = 0;
+  let submissionFailed = false;
 
-  while (jobIds.length < opts.jobs) {
-    const res = await fetch(`${opts.url}/sign_bidirectional`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        env: opts.env,
-        mode: opts.mode,
-        sourceChain: opts.sourceChain,
-      }),
-    });
+  try {
+    while (jobIds.length < opts.jobs) {
+      const res = await fetch(`${opts.url}/sign_bidirectional`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          env: opts.env,
+          mode: opts.mode,
+          sourceChain: opts.sourceChain,
+        }),
+      });
 
-    if (res.status === 429) {
-      const body: { retryAfterMs?: number } = await res.json();
-      const waitMs = body.retryAfterMs ?? 5_000;
-      rateLimited += 1;
-      process.stdout.write(
-        `\r[${clock(started)}] submitted ${jobIds.length}/${opts.jobs} — ` +
-          `rate limited, waiting ${Math.ceil(waitMs / 1000)}s   `
+      if (res.status === 429) {
+        const body: { retryAfterMs?: number } = await res.json();
+        const waitMs = body.retryAfterMs ?? 5_000;
+        rateLimited += 1;
+        process.stdout.write(
+          `\r[${clock(started)}] submitted ${jobIds.length}/${opts.jobs} — ` +
+            `rate limited, waiting ${Math.ceil(waitMs / 1000)}s   `
+        );
+        await sleep(waitMs + 250);
+        continue;
+      }
+
+      if (res.status !== 202) {
+        console.error(`\nSubmit failed (${res.status}):`, await res.text());
+        submissionFailed = true;
+        break;
+      }
+
+      const { jobId }: { jobId: string } = await res.json();
+      jobIds.push(jobId);
+      console.log(
+        `[${clock(started)}] accepted ${jobId} (${jobIds.length}/${opts.jobs})`
       );
-      await sleep(waitMs + 250);
-      continue;
     }
-
-    if (res.status !== 202) {
-      console.error(`\nSubmit failed (${res.status}):`, await res.text());
-      process.exit(1);
-    }
-
-    const { jobId }: { jobId: string } = await res.json();
-    jobIds.push(jobId);
-    process.stdout.write(
-      `\r[${clock(started)}] submitted ${jobIds.length}/${opts.jobs}            `
-    );
+  } catch (error) {
+    // A lost POST response may hide an accepted job; never submit it again.
+    console.error('\nSubmit failed:', error);
+    submissionFailed = true;
   }
+  if (submissionFailed && jobIds.length === 0) process.exit(1);
 
   console.log(
-    `\n\nAll ${jobIds.length} submitted in ${clock(started)}` +
+    `\n\n${submissionFailed ? `Stopped after ${jobIds.length}/${opts.jobs} submissions` : `All ${jobIds.length} submitted`} in ${clock(started)}` +
       (rateLimited > 0 ? ` (${rateLimited} rate-limit waits)` : '') +
       '\nPolling to completion — the respond leg waits for Ethereum finality.\n'
   );
@@ -215,7 +224,7 @@ const main = async () => {
     );
   }
 
-  process.exit(bad.length > 0 ? 1 : 0);
+  process.exit(submissionFailed || bad.length > 0 ? 1 : 0);
 };
 
 main().catch(error => {

@@ -99,11 +99,6 @@ if (process.argv.includes('--help')) {
         networkId: config.node.networkId,
         status: 'prepared',
       };
-      // Persist before submission: a timeout must not lead to a second deployment.
-      await writeFile(receiptPath, JSON.stringify(receipt, null, 2) + '\n', {
-        mode: 0o600,
-      });
-      console.log(`Midnight caller address (prepared): ${address}`);
       const fee = await estimateUnprovenTransactionFee(
         session.wallet,
         tx.serializedTransaction
@@ -116,6 +111,11 @@ if (process.argv.includes('--help')) {
         undefined,
         fee
       );
+      // Persist before submission: a timeout must not lead to a second deployment.
+      await writeFile(receiptPath, JSON.stringify(receipt, null, 2) + '\n', {
+        mode: 0o600,
+      });
+      console.log(`Midnight caller address (prepared): ${address}`);
       receipt.transactionId = await submitUnprovenTransaction(
         session.wallet,
         session.keys,
@@ -133,18 +133,18 @@ if (process.argv.includes('--help')) {
       throw new Error(
         '--initialise requires a configured caller address or saved deployment receipt'
       );
-    const caller = await findDeployedContract(session.providers, {
-      contractAddress: address,
-      compiledContract,
-      privateStateId: PRIVATE_STATE_ID,
-      initialPrivateState: { secretKey: config.operatorSecret },
-    });
     const state =
       await session.providers.publicDataProvider.queryContractState(address);
     if (!state)
       throw new Error(
         `Caller is not indexed yet: ${address}. Retry --initialise after it appears.`
       );
+    const caller = await findDeployedContract(session.providers, {
+      contractAddress: address,
+      compiledContract,
+      privateStateId: PRIVATE_STATE_ID,
+      initialPrivateState: { secretKey: config.operatorSecret },
+    });
     const current = ledger(state.data);
     if (current.destinationChainId !== 11155111n)
       throw new Error('Caller destination is not Sepolia');
