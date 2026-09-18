@@ -1,2 +1,7 @@
+node_modules/
 dist/
+coverage/
 pnpm-lock.yaml
+contracts/midnight/managed/
+contracts/midnight/SignetSigner
+.midnight/

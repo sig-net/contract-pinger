@@ -6,8 +6,9 @@ Simple server that can request a signature from any supported network. Used in l
 
 ### Prerequisites
 
-- Node.js (v18+ recommended)
+- Node.js 22.14 or newer
 - pnpm
+- Compact compiler 0.33.0-rc.2 for the Midnight caller
 
 ### Install dependencies
 
@@ -15,9 +16,22 @@ Simple server that can request a signature from any supported network. Used in l
 pnpm install
 ```
 
+Generate the caller bindings before building or testing. With the Compact
+launcher installed:
+
+```sh
+pnpm compile:midnight
+```
+
+On Linux x64, the pinned standalone compiler can instead be installed with
+`node scripts/install-compact.mjs .midnight/compact`; set
+`COMPACTC="$PWD/.midnight/compact/compactc"` when invoking compilation. Use
+`pnpm compile:midnight:zk` before real Midnight calls; the default compilation
+skips proving keys. Docker builds generate the complete proving assets.
+
 ### Development
 
-Run the server in development mode (auto-reloads on changes):
+Run the server from TypeScript sources:
 
 ```sh
 pnpm dev
@@ -83,22 +97,23 @@ This will automatically format your codebase according to the project's style ru
 
 ## Endpoints
 
-| Endpoint                               | Purpose                                                              |
-| -------------------------------------- | -------------------------------------------------------------------- |
-| `GET /`                                | Health check. The only route that does not need `x-api-secret`.      |
-| `POST /ping`                           | One-shot signature request. `{ chain, check, env }`                  |
-| `POST /eth_balance`                    | Ethereum balance lookup. `{ address, env }`                          |
-| `POST /sign_bidirectional`             | Start a bidirectional round trip. `{ env, mode? }` → `202 { jobId }` |
-| `GET /sign_bidirectional/:jobId`       | Job state, timings and transaction hashes                            |
-| `GET /sign_bidirectional/workers?env=` | Derived addresses, gas balances, busy/idle                           |
-| `GET /sign_bidirectional/stats?env=`   | Latency and failure aggregates, by mode                              |
+| Endpoint                               | Purpose                                                                            |
+| -------------------------------------- | ---------------------------------------------------------------------------------- |
+| `GET /`                                | Health check. The only route that does not need `x-api-secret`.                    |
+| `POST /ping`                           | One-shot signature request. `{ chain, check, env }`                                |
+| `POST /eth_balance`                    | Ethereum balance lookup. `{ address, env }`                                        |
+| `POST /sign_bidirectional`             | Start a bidirectional round trip. `{ env, mode?, sourceChain? }` → `202 { jobId }` |
+| `GET /sign_bidirectional/:jobId`       | Job state, timings and transaction hashes                                          |
+| `GET /sign_bidirectional/workers?env=` | Derived addresses, gas balances, busy/idle                                         |
+| `GET /sign_bidirectional/stats?env=`   | Latency and failure aggregates, by mode                                            |
 
 ## Bidirectional sign/respond
 
 `POST /sign_bidirectional` drives one full round trip: a `sign_bidirectional`
-request on Solana, an MPC signature, a broadcast on Sepolia, and the MPC
-reading that transaction's result back. It calls the chain-signatures program
-directly, so no vault program or deployment is involved.
+request on the selected source chain, an MPC signature, an Ethereum broadcast,
+and the MPC reading that transaction's result back. `sourceChain` defaults to
+`solana`, which calls the chain-signatures program directly. `midnight` uses
+the dedicated caller below and supports only `env=stagenet`, targeting Sepolia.
 
 `dev` and `testnet` both settle on Sepolia. `mainnet` settles on Ethereum
 mainnet and therefore spends real ETH on every job, so the service holds it to
@@ -118,12 +133,51 @@ curl -X POST localhost:3001/sign_bidirectional \
   -d '{"env":"dev","mode":"eth_self_transfer"}'
 ```
 
-Two modes, both needing Sepolia ETH only and no ERC20 balance:
+Two modes, both needing Ethereum gas and no ERC20 balance:
 
 - `eth_self_transfer` — zero-value self-send, 21k gas, depends on no contract.
 - `erc20_zero_transfer` — `transfer(self, 0)`, 38k gas. The only mode that
   exercises the node's `debug_traceTransaction` extraction path, so it is worth
   running on a slower cadence even when the ETH mode is the default.
+
+### Midnight caller
+
+Set the `MPC_MIDNIGHT_*` endpoints in `.env.example`. Run the service and
+commands where the proof-server URL is reachable. The service uses a dedicated
+pinger wallet; the treasury seed belongs only in the funding command's environment.
+
+```sh
+pnpm compile:midnight:zk
+pnpm fund:midnight --help
+pnpm deploy:midnight
+# Resume initialisation after a deployment was submitted:
+pnpm deploy:midnight --initialise
+pnpm fund --source-chain midnight --env stagenet --dry-run
+pnpm fund --source-chain midnight --env stagenet
+pnpm loadtest --source-chain midnight --env stagenet --jobs 1
+```
+
+Before deployment, fund the dedicated wallet using `fund:midnight` with explicit
+NIGHT target, transfer cap, treasury reserve and minimum DUST. Its default is a
+read-only funding preview; `--execute` transfers and saves the child seed in
+`.midnight/pinger.env`. Deployment records the caller in `.midnight/deployment.json`.
+Stop the pinger while running wallet funding or deployment commands.
+Persist that directory for the service, or configure `MPC_MIDNIGHT_PINGER_SEED`
+and the initialised `MPC_MIDNIGHT_CALLER_ADDRESS` explicitly.
+
+Midnight holds one worker through the full round trip, including verification
+and on-chain consumption of the successful return attestation. Once a source transaction is attempted, failed or interrupted jobs retain public
+recovery identifiers in `.midnight/pending-request.json`. New Midnight jobs are
+blocked until that request is reconciled; a restart preserves the block. The
+receipt also records any settlement transaction attempt. Do not remove it merely
+because a job timed out. Automatic recovery of failed requests is not implemented. Use `sourceChain=midnight&env=stagenet` on workers/stats queries.
+
+The MPC repository's k6 workflow supports a serial Midnight run. Its schedule is
+opt-in through `LT_MIDNIGHT_ENABLED=true`. Set the same variable in this repository
+to include Midnight in the Ethereum funding sweep, plus the public caller address
+and any MPC root override. `pnpm fund --env dev,testnet --include-midnight` shares
+one spend cap across all three pools. Run only one service instance per Midnight
+wallet; the wallet queue and worker lease are local to the process.
 
 ### Load testing
 

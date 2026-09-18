@@ -1,8 +1,26 @@
 import request from 'supertest';
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import type { Server } from 'http';
 
+const midnight = vi.hoisted(() => ({
+  assertReady: vi.fn(async () => {}),
+  deriveWorkers: vi.fn(async (_client: unknown, paths: readonly string[]) =>
+    paths.map(path => ({
+      path,
+      address: '0x1111111111111111111111111111111111111111',
+    }))
+  ),
+}));
+vi.mock('../src/midnight/source.mjs', () => ({
+  createMidnightSource: () => midnight,
+}));
+
 import { app } from '../src/index';
+import {
+  BidirectionalService,
+  getService,
+} from '../src/handlers/signBidirectional';
+import { ETHEREUM_TARGETS } from '../src/utils/bidirectionalTx';
 
 let server: Server;
 const API_SECRET = process.env.API_SECRET!;
@@ -119,4 +137,140 @@ describe('GET /sign_bidirectional/stats', () => {
     expect(res.body.rate).toHaveProperty('usedInWindow');
     expect(res.body.jobs).toHaveProperty('states');
   });
+});
+
+describe('bidirectional source/environment validation', () => {
+  it.each(['unknown', '', null, 3])(
+    'rejects invalid sourceChain %s',
+    async sourceChain => {
+      const res = await post({ env: 'dev', sourceChain });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('Invalid sourceChain parameter');
+      expect(res.body.validSourceChains).toEqual(['solana', 'midnight']);
+    }
+  );
+
+  it.each([
+    ['solana', 'stagenet', ['dev', 'testnet', 'mainnet']],
+    ['midnight', 'dev', ['stagenet']],
+    ['midnight', 'testnet', ['stagenet']],
+    ['midnight', 'mainnet', ['stagenet']],
+  ])(
+    'rejects unsupported %s/%s',
+    async (sourceChain, network, validEnvironments) => {
+      const res = await post({ env: network, sourceChain });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('Invalid or missing environment parameter');
+      expect(res.body.validEnvironments).toEqual(validEnvironments);
+    }
+  );
+
+  it.each(['workers', 'stats'])(
+    'validates source selection on %s',
+    async endpoint => {
+      const res = await request(app)
+        .get(`/sign_bidirectional/${endpoint}?env=mainnet&sourceChain=midnight`)
+        .set('x-api-secret', API_SECRET);
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('Invalid or missing environment parameter');
+    }
+  );
+});
+
+describe('Midnight job API dispatch', () => {
+  it('accepts a Midnight job, exposes it by ID, and reports effective serialized capacity', async () => {
+    midnight.assertReady.mockResolvedValue(undefined);
+    const rpc = vi
+      .spyOn(ETHEREUM_TARGETS.stagenet, 'rpcUrl')
+      .mockReturnValue('http://localhost:8545');
+    // Exercise HTTP dispatch and real stores without submitting chain transactions.
+    const start = vi
+      .spyOn(BidirectionalService.prototype, 'start')
+      .mockImplementation(function (this: BidirectionalService, mode) {
+        return this.jobs.create(this.environment, mode, this.sourceChain);
+      });
+    try {
+      const accepted = await post({ sourceChain: 'midnight', env: 'stagenet' });
+      expect(accepted.status).toBe(202);
+      expect(accepted.body.sourceChain).toBe('midnight');
+      const job = await request(app)
+        .get(`/sign_bidirectional/${accepted.body.jobId}`)
+        .set('x-api-secret', API_SECRET);
+      expect(job.status).toBe(200);
+      expect(job.body.sourceChain).toBe('midnight');
+      expect(job.body.environment).toBe('stagenet');
+      midnight.assertReady.mockRejectedValue(
+        new Error('Active request requires reconciliation')
+      );
+      const service = getService(
+        'stagenet',
+        'http://localhost:8545',
+        'midnight'
+      );
+      const balances = vi
+        .spyOn(service, 'refreshBalances')
+        .mockResolvedValue(undefined);
+      try {
+        const workers = await request(app)
+          .get('/sign_bidirectional/workers?sourceChain=midnight&env=stagenet')
+          .set('x-api-secret', API_SECRET);
+        expect(workers.status).toBe(200);
+        expect(workers.body.workers).toHaveLength(1);
+      } finally {
+        balances.mockRestore();
+      }
+      const full = await post({ sourceChain: 'midnight', env: 'stagenet' });
+      expect(full.status).toBe(429);
+      expect(full.body.limit).toBe('active');
+      expect(full.body.maxActiveJobs).toBe(1);
+      expect(start).toHaveBeenCalledOnce();
+      const stats = await request(app)
+        .get('/sign_bidirectional/stats?sourceChain=midnight')
+        .set('x-api-secret', API_SECRET);
+      expect(stats.status).toBe(200);
+      expect(stats.body.environment).toBe('stagenet');
+      expect(stats.body.sourceChain).toBe('midnight');
+      expect(stats.body.pool.size).toBe(1);
+      expect(stats.body.jobs.active).toBe(1);
+    } finally {
+      const service = getService(
+        'stagenet',
+        'http://localhost:8545',
+        'midnight'
+      );
+      for (const job of service.jobs.all()) {
+        service.jobs.update(job.id, { state: 'failed' });
+      }
+      start.mockRestore();
+      midnight.assertReady.mockResolvedValue(undefined);
+      rpc.mockRestore();
+    }
+  });
+});
+
+it('refuses unreconciled Midnight submissions before creating a job or charging the limiter', async () => {
+  const rpc = vi
+    .spyOn(ETHEREUM_TARGETS.stagenet, 'rpcUrl')
+    .mockReturnValue('http://localhost:8545');
+  const service = getService('stagenet', 'http://localhost:8545', 'midnight');
+  expect(service.jobs.activeCount).toBe(0);
+  midnight.assertReady.mockRejectedValue(
+    new Error('Pending request request-42 / tx-42 requires reconciliation')
+  );
+  const create = vi.spyOn(service.jobs, 'create');
+  const limiter = vi.spyOn(service.limiter, 'tryAcquire');
+  try {
+    const res = await post({ sourceChain: 'midnight', env: 'stagenet' });
+    expect(res.status).toBe(503);
+    expect(res.body.details).toContain(
+      'request-42 / tx-42 requires reconciliation'
+    );
+    expect(create).not.toHaveBeenCalled();
+    expect(limiter).not.toHaveBeenCalled();
+  } finally {
+    midnight.assertReady.mockResolvedValue(undefined);
+    create.mockRestore();
+    limiter.mockRestore();
+    rpc.mockRestore();
+  }
 });

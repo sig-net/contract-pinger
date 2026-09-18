@@ -226,6 +226,14 @@ jobs:
             fi
           done
 
+      - name: Install pinned Compact compiler
+        run: node scripts/install-compact.mjs "$RUNNER_TEMP/compact"
+
+      - name: Compile Midnight caller bindings
+        env:
+          COMPACTC: ${{ runner.temp }}/compact/compactc
+        run: pnpm compile:midnight
+
       - name: Build
         run: pnpm build
 

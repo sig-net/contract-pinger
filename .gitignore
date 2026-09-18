@@ -9,3 +9,6 @@ coverage/
 .env.*
 !.env.example
 .pnpm-store/
+contracts/midnight/managed/
+contracts/midnight/SignetSigner
+.midnight/
