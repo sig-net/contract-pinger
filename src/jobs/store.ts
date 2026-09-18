@@ -126,8 +126,8 @@ export class JobStore {
    *
    * Counted apart from the finality wait because they are bounded by different
    * things. Everything up to `confirmed` holds an address lease and a stream of
-   * RPC calls for about a minute; `confirmed` holds nothing but an event
-   * subscription, for half an hour. Lumping them lets the cheap ones — which
+   * RPC calls for about a minute; `confirmed` holds a shared-poller
+   * registration, for half an hour. Lumping them lets the cheap ones — which
    * vastly outnumber the others — crowd out the expensive ones, so a single cap
    * of N means a sustainable rate of N over the respond budget rather than
    * anything to do with how many addresses exist.
@@ -162,8 +162,7 @@ export class JobStore {
   /**
    * Which ceiling, if either, is reached. The distinction is the point: an
    * active rejection says add addresses or slow arrivals, a respond rejection
-   * says the RPC's subscription ceiling is the limit and a shared dispatcher
-   * is what would raise it.
+   * says the pending-record memory budget is full.
    */
   atCapacity(): 'active' | 'awaiting_respond' | null {
     if (this.activeCount >= this.maxActiveJobs) return 'active';

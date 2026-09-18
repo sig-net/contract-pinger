@@ -101,7 +101,7 @@ const schema = z.object({
   // throughput, so it sits near the path count rather than the arrival rate.
   SIG_BIDIRECTIONAL_MAX_ACTIVE_JOBS: integer(20, 0),
   // Past confirmation, waiting only on the MPC's respond. These hold an event
-  // subscription and nothing else, and there are far more of them: at ten jobs
+  // registration and nothing else, and there are far more of them: at ten jobs
   // a minute with a thirty-five-minute respond leg, roughly 350 are live.
   SIG_BIDIRECTIONAL_MAX_JOBS: integer(400, 0),
   SIG_BIDIRECTIONAL_RETAINED_JOBS: integer(1000),

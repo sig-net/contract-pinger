@@ -1,4 +1,4 @@
-import { initEthereum } from '../utils/initEvm';
+import { initEthereum, withEthereumSubmission } from '../utils/initEvm';
 import { createSignRequest } from '../utils/evmTransactions';
 import { constants } from '@sig-net/signet.js';
 
@@ -28,11 +28,15 @@ export async function execute({
       `Ethereum can not be called with check=true due to long finalization time`
     );
   } else {
-    const signatureRequest = await createSignRequest({
-      chainSigContract,
-      publicClient,
-      walletClient,
-    });
+    const signatureRequest = await withEthereumSubmission(
+      `${walletClient.chain?.id}:${walletClient.account!.address}`,
+      () =>
+        createSignRequest({
+          chainSigContract,
+          publicClient,
+          walletClient,
+        })
+    );
     return { signatureRequest };
   }
 }

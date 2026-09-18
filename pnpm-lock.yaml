@@ -12,8 +12,8 @@ importers:
         specifier: ^0.32.1
         version: 0.32.1(bufferutil@4.1.0)(typescript@6.0.3)(utf-8-validate@6.0.6)
       '@sig-net/signet.js':
-        specifier: ^0.5.2
-        version: 0.5.2(bufferutil@4.1.0)(typescript@6.0.3)(utf-8-validate@6.0.6)(zod@4.5.4)
+        specifier: github:sig-net/signet.js#xiangyi/shared-http-polling
+        version: https://codeload.github.com/sig-net/signet.js/tar.gz/d9d0e2ebe6fcb3bf0bf925786896fc3c2b32e9a2(bufferutil@4.1.0)(typescript@6.0.3)(utf-8-validate@6.0.6)(zod@4.5.4)
       '@solana/web3.js':
         specifier: ^1.98.4
         version: 1.98.4(bufferutil@4.1.0)(typescript@6.0.3)(utf-8-validate@6.0.6)
@@ -432,8 +432,9 @@ packages:
   '@scure/bip39@2.4.0':
     resolution: {integrity: sha512-82dxFbZUYboyOf0AXiydsQrFQ5Q4h9mX+O2UkE91ROYmsc0BKMGZLwDmy96Jpa2+vrtoxomjUhy1RPIgH/r2nA==}
 
-  '@sig-net/signet.js@0.5.2':
-    resolution: {integrity: sha512-y9HOlwHC/GUzTqBkeuCBIbjJDidBLLQNiY2gpp3uPKkLpa8Xfg1AzYjHqexCJVAhKFozgJ72xuzs+MBQqq81+Q==}
+  '@sig-net/signet.js@https://codeload.github.com/sig-net/signet.js/tar.gz/d9d0e2ebe6fcb3bf0bf925786896fc3c2b32e9a2':
+    resolution: {tarball: https://codeload.github.com/sig-net/signet.js/tar.gz/d9d0e2ebe6fcb3bf0bf925786896fc3c2b32e9a2}
+    version: 0.5.2
 
   '@solana/buffer-layout@4.0.1':
     resolution: {integrity: sha512-E1ImOIAD1tBZFRdjeM4/pzTiTApC0AOBGwyAMS4fwIodCWArzJ3DWdoh8cKxeFM2fElkxBh2Aqts1BPC373rHA==}
@@ -1938,7 +1939,7 @@ snapshots:
     dependencies:
       '@noble/hashes': 2.4.0
 
-  '@sig-net/signet.js@0.5.2(bufferutil@4.1.0)(typescript@6.0.3)(utf-8-validate@6.0.6)(zod@4.5.4)':
+  '@sig-net/signet.js@https://codeload.github.com/sig-net/signet.js/tar.gz/d9d0e2ebe6fcb3bf0bf925786896fc3c2b32e9a2(bufferutil@4.1.0)(typescript@6.0.3)(utf-8-validate@6.0.6)(zod@4.5.4)':
     dependencies:
       '@coral-xyz/anchor': 0.32.1(bufferutil@4.1.0)(typescript@6.0.3)(utf-8-validate@6.0.6)
       '@cosmjs/amino': 0.39.0

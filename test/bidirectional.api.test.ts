@@ -3,6 +3,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { Server } from 'http';
 
 import { app } from '../src/index';
+import { closeSharedSolana } from '../src/utils/initSolana';
 
 let server: Server;
 const API_SECRET = process.env.API_SECRET!;
@@ -14,6 +15,7 @@ beforeAll(() => {
 });
 
 afterAll(() => {
+  closeSharedSolana();
   return new Promise<void>(resolve => {
     server?.close(() => resolve());
   });
@@ -118,5 +120,21 @@ describe('GET /sign_bidirectional/stats', () => {
     expect(res.body.pool.size).toBeGreaterThan(0);
     expect(res.body.rate).toHaveProperty('usedInWindow');
     expect(res.body.jobs).toHaveProperty('states');
+  });
+});
+
+describe('GET /polling', () => {
+  it('requires authentication', async () => {
+    expect((await request(app).get('/polling')).status).toBe(401);
+  });
+  it('reports existing services without starting network observation', async () => {
+    const res = await request(app)
+      .get('/polling')
+      .set('x-api-secret', API_SECRET);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.solana)).toBe(true);
+    expect(
+      res.body.solana.every((context: { running: boolean }) => !context.running)
+    ).toBe(true);
   });
 });

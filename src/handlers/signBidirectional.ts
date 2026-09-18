@@ -205,12 +205,12 @@ export class BidirectionalService {
 
   private async run(job: JobRecord): Promise<void> {
     const { bidirectional } = env;
-    const { chainSigContract, provider, keypair } = this.solana();
+    const { chainSigContract, keypair } = this.solana();
     let worker: Worker | undefined;
     let leaseReleased = false;
     // Both event waits are registered before the transaction is broadcast, but
     // most failure paths return long before the respond leg would settle. Its
-    // subscription and backfill timers would otherwise stay alive for the full
+    // event registrations would otherwise stay alive for the full
     // respond timeout — up to thirty-five minutes after the job is already
     // recorded as failed, and against the same RPC every other job is using.
     const watches = new AbortController();
@@ -339,25 +339,17 @@ export class BidirectionalService {
       const transaction = new Transaction()
         .add(ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }))
         .add(instruction);
-      const solanaTx = await provider.sendAndConfirm(transaction, []);
-      this.jobs.update(job.id, {
-        state: 'sign_sent',
-        solanaTx,
-        timings: { signSentAt: Date.now() },
-      });
-
-      // --- Step 6 and 9: both waits start now -----------------------------
+      await chainSigContract.prepareEventPolling();
+      abortIfShuttingDown();
+      // Register both events before the request can reach the chain.
       // The respond watcher is registered before broadcasting so a fast
-      // respond cannot land in the gap between confirmation and subscription.
+      // respond cannot land in the gap between confirmation and registration.
       const signer = new PublicKey(contractAddresses[this.environment]);
       const signaturePromise = chainSigContract.waitForEvent({
         eventName: 'signatureRespondedEvent',
         requestId,
         signer,
-        afterSignature: solanaTx,
-        timeoutMs: bidirectional.signatureTimeoutMs,
-        backfillIntervalMs: 15_000,
-        healthCheckIntervalMs: 15_000,
+        timeoutMs: bidirectional.signatureTimeoutMs + 90_000,
         signal: watches.signal,
       });
       // Registered now so a fast respond cannot land in a gap, but the respond
@@ -371,25 +363,39 @@ export class BidirectionalService {
         eventName: 'respondBidirectionalEvent',
         requestId,
         signer,
-        afterSignature: solanaTx,
         timeoutMs:
+          90_000 +
           bidirectional.signatureTimeoutMs +
           bidirectional.ethConfirmTimeoutMs +
           bidirectional.respondTimeoutMs,
-        // Polled far less often than the signature leg. This one waits on
-        // Ethereum finality, so nothing can arrive for tens of minutes, and
-        // the interval is multiplied by every live job: the websocket
-        // subscription still delivers promptly, backfill is only the fallback.
-        backfillIntervalMs: 120_000,
-        healthCheckIntervalMs: 60_000,
         signal: watches.signal,
       });
       // Nothing awaits this until step 9; without a no-op handler a timeout
       // there would surface as an unhandled rejection first.
       respondPromise.catch(() => undefined);
+      signaturePromise.catch(() => undefined);
+
+      const solanaTx = await chainSigContract.sendAndConfirmWithoutWebSocket(
+        transaction,
+        []
+      );
+      this.jobs.update(job.id, {
+        state: 'sign_sent',
+        solanaTx,
+        timings: { signSentAt: Date.now() },
+      });
 
       this.jobs.update(job.id, { state: 'awaiting_signature' });
 
+      const signatureDeadline = setTimeout(
+        () =>
+          watches.abort(
+            new Error(
+              `Signature not received within ${bidirectional.signatureTimeoutMs}ms of Solana confirmation`
+            )
+          ),
+        bidirectional.signatureTimeoutMs
+      );
       let rsv;
       try {
         rsv = await signaturePromise;
@@ -397,10 +403,12 @@ export class BidirectionalService {
         // signet.js exposes a signatureErrorEvent, but the Solana program does
         // not define or emit one, so silence is the only failure signal the
         // network gives and a timeout is the whole story. Watching for it
-        // would add a third subscription per job for an event that never
+        // would add a third registration per job for an event that never
         // arrives.
         this.jobs.fail(job.id, 'signature_timeout', error);
         return;
+      } finally {
+        clearTimeout(signatureDeadline);
       }
       this.jobs.update(job.id, { timings: { signatureAt: Date.now() } });
 
@@ -524,7 +532,7 @@ export class BidirectionalService {
       });
     } finally {
       releaseLease();
-      // No-op once both have settled; tears down the subscriptions otherwise.
+      // No-op once both have settled; removes the event registrations otherwise.
       watches.abort();
       activeJobs.delete(watches);
     }
@@ -534,7 +542,7 @@ export class BidirectionalService {
 /**
  * Every in-flight job's watches, so shutdown can stop them.
  *
- * Jobs are detached from the request that started them and hold subscriptions
+ * Jobs are detached from the request that started them and hold event registrations
  * and timers for as long as their budgets allow. Closing the HTTP listener
  * alone leaves those alive, and the process stays up until the orchestrator
  * loses patience and kills it.
