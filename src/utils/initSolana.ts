@@ -41,7 +41,18 @@ const resolveConfig = (environment: SolanaEnvironment) => {
 
 const buildProvider = (environment: SolanaEnvironment) => {
   const config = resolveConfig(environment);
-  const connection = new Connection(config.solanaRpcUrl, 'confirmed');
+  const connection = new Connection(config.solanaRpcUrl, {
+    commitment: 'confirmed',
+    disableRetryOnRateLimit: true,
+    fetch: (input, init) =>
+      globalThis.fetch(input, {
+        ...init,
+        signal: AbortSignal.any([
+          ...(init?.signal ? [init.signal] : []),
+          AbortSignal.timeout(15_000),
+        ]),
+      }),
+  });
   const keypairArray = JSON.parse(config.solanaPrivateKey);
   const keypair = Keypair.fromSecretKey(new Uint8Array(keypairArray));
   const wallet = new anchor.Wallet(keypair);
@@ -63,17 +74,23 @@ export const buildChainSignatureContract = ({
   contractAddress,
   provider,
   requesterAddress,
-  disableRetryOnRateLimit = false,
+  eventPoller,
+  transactionConfirmer,
 }: {
   contractAddress: string;
   provider: anchor.AnchorProvider;
   requesterAddress?: string;
-  disableRetryOnRateLimit?: boolean;
+  eventPoller?: InstanceType<typeof contracts.solana.SolanaEventPoller>;
+  transactionConfirmer?: InstanceType<
+    typeof contracts.solana.HttpTransactionConfirmer
+  >;
 }) => {
   const { solRootPublicKey } = env;
   return new contracts.solana.ChainSignatureContract({
     provider,
     programId: contractAddress,
+    eventPoller,
+    transactionConfirmer,
     config: {
       // Passed as `undefined` rather than `''` when the override is absent.
       // signet.js falls back to pairing the root key to the program address,
@@ -85,7 +102,6 @@ export const buildChainSignatureContract = ({
       // the program address, which is the configuration that cannot disagree.
       rootPublicKey: solRootPublicKey,
       requesterAddress,
-      disableRetryOnRateLimit,
     },
   });
 };
@@ -97,17 +113,26 @@ export const initSolana = ({
   contractAddress: string;
   environment: SolanaEnvironment;
 }) => {
-  const { provider } = buildProvider(environment);
+  const { provider, eventPoller, transactionConfirmer } = getSharedSolana({
+    contractAddress,
+    environment,
+  });
   const requesterKeypair = Keypair.generate();
   const chainSigContract = buildChainSignatureContract({
     contractAddress,
     provider,
     requesterAddress: requesterKeypair.publicKey.toString(),
+    eventPoller,
+    transactionConfirmer,
   });
   return { chainSigContract, provider, requesterKeypair };
 };
 
 export interface SharedSolanaContext {
+  eventPoller: InstanceType<typeof contracts.solana.SolanaEventPoller>;
+  transactionConfirmer: InstanceType<
+    typeof contracts.solana.HttpTransactionConfirmer
+  >;
   provider: anchor.AnchorProvider;
   /** Fee payer for every Solana transaction, and the bidirectional requester. */
   keypair: Keypair;
@@ -118,16 +143,7 @@ export interface SharedSolanaContext {
 
 const sharedContexts = new Map<string, SharedSolanaContext>();
 
-/**
- * One provider and one `ChainSignatureContract` per environment, reused across
- * requests.
- *
- * The bidirectional flow opens two long-lived event waits per job, and a
- * subscription shared across waiters can only ever be shared if the waiters
- * come from the same contract instance. Constructing a fresh instance per
- * request — as `initSolana` does for the unidirectional path — forecloses
- * that, so this is deliberately memoized.
- */
+/** Shared HTTP services live until server shutdown, including between load runs. */
 export const getSharedSolana = ({
   contractAddress,
   environment,
@@ -140,21 +156,44 @@ export const getSharedSolana = ({
   if (existing) return existing;
 
   const { provider, keypair } = buildProvider(environment);
+  const eventPoller = new contracts.solana.SolanaEventPoller({
+    connection: provider.connection,
+    programId: contractAddress,
+    pollIntervalMs: 1_000,
+    fetchConcurrency: 8,
+  });
+  const transactionConfirmer = new contracts.solana.HttpTransactionConfirmer(
+    provider.connection
+  );
   const context: SharedSolanaContext = {
+    eventPoller,
+    transactionConfirmer,
     provider,
     keypair,
     chainSigContract: buildChainSignatureContract({
       contractAddress,
       provider,
       requesterAddress: keypair.publicKey.toString(),
-      // Only the bidirectional path disables it. web3.js retrying 429s fights
-      // the backfill loop in `waitForEvent` and multiplies requests against an
-      // endpoint already refusing them, which signet.js documents. The
-      // unidirectional `/ping` path runs no backfill, so it keeps the retry
-      // that has always carried it through a rate-limited endpoint.
-      disableRetryOnRateLimit: true,
+      eventPoller,
+      transactionConfirmer,
     }),
   };
   sharedContexts.set(key, context);
   return context;
+};
+
+/** Read-only diagnostics; does not create services or start RPC work. */
+export const solanaPollingStats = () =>
+  [...sharedContexts.entries()].map(([key, context]) => ({
+    key,
+    ...context.eventPoller.stats,
+    pendingConfirmations: context.transactionConfirmer.pendingCount,
+  }));
+
+export const closeSharedSolana = (): void => {
+  for (const context of sharedContexts.values()) {
+    context.eventPoller.close();
+    context.transactionConfirmer.close();
+  }
+  sharedContexts.clear();
 };

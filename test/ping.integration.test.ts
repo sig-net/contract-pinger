@@ -2,6 +2,7 @@ import request from 'supertest';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 
 import { app } from '../src/index';
+import { closeSharedSolana } from '../src/utils/initSolana';
 import type { Server } from 'http';
 
 let server: Server;
@@ -241,6 +242,7 @@ describe('/eth_balance endpoint', () => {
 });
 
 afterAll(() => {
+  closeSharedSolana();
   return new Promise<void>(resolve => {
     server?.close(() => resolve());
   });

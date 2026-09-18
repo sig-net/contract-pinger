@@ -4,7 +4,7 @@ import { sepolia, mainnet } from 'viem/chains';
 import { env } from './env';
 import { contracts } from '@sig-net/signet.js';
 
-export const initEthereum = ({
+const buildEthereum = ({
   contractAddress,
   environment,
 }: {
@@ -61,4 +61,32 @@ export const initEthereum = ({
     contractAddress: contractAddress as `0x${string}`,
   });
   return { publicClient, walletClient, chainSigContract };
+};
+
+const contexts = new Map<string, ReturnType<typeof buildEthereum>>();
+export const initEthereum = (options: Parameters<typeof buildEthereum>[0]) => {
+  const key = `${options.environment}:${options.contractAddress}`;
+  let context = contexts.get(key);
+  if (!context) {
+    context = buildEthereum(options);
+    contexts.set(key, context);
+  }
+  return context;
+};
+
+// The same account can submit to multiple programs on a chain. Serialize
+// nonce lookup and broadcast across those programs, through the RPC response.
+const submissions = new Map<string, Promise<unknown>>();
+export const withEthereumSubmission = async <T>(
+  key: string,
+  submit: () => Promise<T>
+): Promise<T> => {
+  const previous = submissions.get(key) ?? Promise.resolve();
+  const current = previous.catch(() => undefined).then(submit);
+  submissions.set(key, current);
+  try {
+    return await current;
+  } finally {
+    if (submissions.get(key) === current) submissions.delete(key);
+  }
 };

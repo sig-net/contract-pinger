@@ -19,7 +19,7 @@ export async function execute({
   environment: keyof typeof contractAddresses;
 }) {
   const contractAddress = contractAddresses[environment];
-  const { chainSigContract, provider, requesterKeypair } = initSolana({
+  const { chainSigContract, requesterKeypair } = initSolana({
     contractAddress,
     environment,
   });
@@ -57,7 +57,10 @@ export async function execute({
       signArgs[1].sign
     );
     const transaction = new Transaction().add(instruction);
-    const hash = await provider.sendAndConfirm(transaction, [requesterKeypair]);
+    const hash = await chainSigContract.sendAndConfirmWithoutWebSocket(
+      transaction,
+      [requesterKeypair]
+    );
     return { signatureRequest: { txHash: hash, requestId } };
   }
 }

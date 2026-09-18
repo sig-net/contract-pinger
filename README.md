@@ -155,17 +155,16 @@ driver's output is the signal to add addresses.
 Capacity is two ceilings rather than one, because a job's cost changes at
 confirmation. Before it, a job holds one of the derived addresses and a stream
 of chain calls for about a minute. After it, the address is released and the job
-holds only an event subscription, for up to thirty-five minutes. At 10
+holds only a shared-poller registration, for up to thirty-five minutes. At 10
 jobs/minute that is roughly a dozen of the first kind against 350 of the second,
 so a single cap would let the cheap jobs crowd out the expensive ones — and its
 real sustainable rate would be the cap divided by the respond budget.
 
 `MAX_ACTIVE_JOBS` is bounded by the address pool and chain throughput.
-`MAX_JOBS` is bounded by what the Solana endpoint tolerates, since signet.js
-runs a subscription and a backfill loop per wait. A `429` names which ceiling
-it hit: the first says add addresses or slow arrivals, the second says the
-subscription ceiling is the limit, which is the point at which a shared event
-dispatcher becomes worth building.
+`MAX_JOBS` bounds pending response records in memory. All waits share HTTP
+observation; adding waiters does not add polling loops. A `429` identifies whether
+active chain work or pending response capacity is full. Check `/polling` for RPC
+errors and transaction backlog before raising admission limits.
 
 ### Funding
 
@@ -288,3 +287,47 @@ signatures that recover to an unexpected address.
 
 Note that `SIG_EVM_SK_1` through `SIG_EVM_SK_5` are rotated unconditionally, so
 all five must be set. They may all be the same key.
+
+## Local SDK development and HTTP polling
+
+Both repos can be developed without publishing a package or opening PRs:
+
+```sh
+# Install SDK dependencies once (in the sibling signet.js checkout).
+(cd ../signet.js && corepack yarn install --immutable)
+# Build, pack and install the local SDK. Repeat after SDK changes.
+pnpm sdk:local
+pnpm typecheck
+pnpm build
+pnpm dev
+```
+
+An alternative SDK checkout can be passed as `pnpm sdk:local /path/to/signet.js`.
+The tarball lives in ignored `.local/`; the local dependency in package.json and
+pnpm-lock.yaml is for development and must be replaced by a published SDK version
+before releasing pinger. Existing RPC URLs, keys, API secret, and port settings in
+`.env` apply. Point k6 at the local pinger URL.
+
+Solana requests share one HTTP event poller and transaction confirmer per
+network/program context. Ping requesters remain distinct. Signature checking
+starts observation before submission; submission-only pings use HTTP confirmation
+without an event waiter. Polling continues between load-test runs and stops on
+SIGINT/SIGTERM. No Solana request path uses WebSocket confirmation or subscriptions.
+Ethereum clients are reused and nonce lookup/broadcast is serialized per account
+and chain within this process; do not share that sending account across pinger
+processes without external nonce coordination.
+
+Authenticated `GET /polling` reports each existing context's running state,
+waiter count, transaction backlog, cursor, last successful cycle, last error,
+restart count and pending confirmations. It does not create contexts or start
+network work. HTTP failures retry with backoff; RPC deadlines prevent a hung
+request from wedging observation. Poller loop restarts retain pending work and
+waiters. This state is in memory: restarting the entire pinger process does not
+restore jobs. Durable process recovery requires a persistent job store and replay
+and is separate from loop recovery.
+
+Offline coverage against the installed SDK:
+
+```sh
+pnpm exec vitest run test/shared-polling.unit.test.ts test/bidirectional.unit.test.ts
+```

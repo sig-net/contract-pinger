@@ -16,6 +16,7 @@ import {
   type BidirectionalEnvironment,
 } from './utils/bidirectionalTx';
 import { env } from './utils/env';
+import { closeSharedSolana, solanaPollingStats } from './utils/initSolana';
 
 // Asserted here rather than in the schema: this is the server's requirement,
 // and the scripts share that config without serving anything.
@@ -59,6 +60,8 @@ app.get('/', (req: express.Request, res: express.Response): void => {
     supportedChains: blockchainHandlers.getSupportedChains(),
   });
 });
+
+app.get('/polling', (_req, res) => res.json({ solana: solanaPollingStats() }));
 
 app.post(
   '/ping',
@@ -201,7 +204,7 @@ app.post(
       if (full) {
         // Named rather than merged: an active rejection means the address pool
         // or chain throughput is the limit, and a respond rejection means the
-        // subscription ceiling is. They call for different remedies.
+        // pending-response memory budget is.
         const { bidirectional } = env;
         const retryAfterMs = full === 'active' ? 15_000 : 60_000;
         res
@@ -407,19 +410,22 @@ if (require.main === module) {
     );
   });
 
-  process.on('SIGTERM', () => {
-    console.log('SIGTERM signal received: closing HTTP server');
+  const shutdown = () => {
+    console.log('Closing HTTP server and shared polling services');
     // Bidirectional jobs outlive the request that started them and hold event
-    // subscriptions and timers for as long as their budgets allow. Without
+    // registrations and timers for as long as their budgets allow. Without
     // this the listener closes but the process does not exit.
     const abandoned = abortActiveJobs();
     if (abandoned > 0) {
       console.log(`Abandoned ${abandoned} in-flight bidirectional job(s)`);
     }
+    closeSharedSolana();
     server?.close(() => {
       console.log('HTTP server closed');
     });
-  });
+  };
+  process.once('SIGTERM', shutdown);
+  process.once('SIGINT', shutdown);
 }
 
 export { app, server };
