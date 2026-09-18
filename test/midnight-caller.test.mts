@@ -138,7 +138,7 @@ it('SDK signed transaction composition preserves verified signature selection', 
     requesterRequestsPath: [0],
     signetContractAddress: centralAddress,
     publicDataProvider: { queryContractState },
-    eventSource: { querySignetEvents: async () => [] },
+    eventSource: { async *streamSignetEvents() {} },
   });
   const unsigned = await reader.getUnsignedEvmTransaction(id);
   const response = (secret: Uint8Array) => {

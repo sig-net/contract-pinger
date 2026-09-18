@@ -10,6 +10,7 @@ import {
   requestIdBytes,
   requestIdHex,
   SIGNET_EVENT_NAME_LENGTH,
+  type SignetMiscEvent,
 } from '@sig-net/midnight';
 import {
   calculateSignetAttestationDigest,
@@ -151,6 +152,14 @@ function transport(synchronous?: WireEvent[]) {
   };
 }
 
+async function collectEvents(
+  events: AsyncIterable<SignetMiscEvent>
+): Promise<SignetMiscEvent[]> {
+  const collected: SignetMiscEvent[] = [];
+  for await (const event of events) collected.push(event);
+  return collected;
+}
+
 describe('request-scoped Midnight events', () => {
   it('sends the actual SDK contract/type filter and submission-block cursor once', async () => {
     const run = transport();
@@ -173,8 +182,8 @@ describe('request-scoped Midnight events', () => {
         fieldPrefixes: [{ fieldName: 'payload', prefix: request }],
       })
     ).toThrow(/Misc has no indexed fields/);
-    await run.source.querySignetEvents(central);
-    await run.source.querySignetEvents(central);
+    await collectEvents(run.source.streamSignetEvents(central));
+    await collectEvents(run.source.streamSignetEvents(central));
     expect(run.requests).toHaveLength(1);
   });
 
@@ -182,7 +191,7 @@ describe('request-scoped Midnight events', () => {
     const run = transport();
     for (const event of fixtures) run.emit(event);
     for (const event of fixtures) run.emit(event);
-    const cached = await run.source.querySignetEvents(central);
+    const cached = await collectEvents(run.source.streamSignetEvents(central));
     expect(cached.map(event => event.name)).toEqual([
       'SignatureRespondedEvent',
       'RespondBidirectionalEvent',
@@ -193,9 +202,41 @@ describe('request-scoped Midnight events', () => {
     cached[0].payload.fill(0);
     expect(
       Buffer.from(
-        (await run.source.querySignetEvents(central))[0].payload
+        (await collectEvents(run.source.streamSignetEvents(central)))[0].payload
       ).toString('hex')
     ).toBe(fixtures[0].payload);
+    expect(run.requests).toHaveLength(1);
+  });
+
+  it('streams a finite snapshot while later reads observe newly received posts', async () => {
+    const run = transport();
+    run.emit(fixtures[0]);
+    const stream = run.source
+      .streamSignetEvents(central)
+      [Symbol.asyncIterator]();
+    expect((await stream.next()).value?.name).toBe('SignatureRespondedEvent');
+    run.emit(fixtures[1]);
+    expect(await stream.next()).toEqual({ done: true, value: undefined });
+    expect(
+      (await collectEvents(run.source.streamSignetEvents(central))).map(
+        event => event.name
+      )
+    ).toEqual(['SignatureRespondedEvent', 'RespondBidirectionalEvent']);
+    expect(run.stopped()).toBe(false);
+  });
+
+  it('keeps the subscription and cached posts when a consumer stops iterating early', async () => {
+    const run = transport();
+    run.emit(fixtures[0]);
+    run.emit(fixtures[1]);
+    for await (const event of run.source.streamSignetEvents(central)) {
+      expect(event.name).toBe('SignatureRespondedEvent');
+      break;
+    }
+    expect(run.stopped()).toBe(false);
+    expect(
+      await collectEvents(run.source.streamSignetEvents(central))
+    ).toHaveLength(2);
     expect(run.requests).toHaveLength(1);
   });
 
@@ -203,15 +244,15 @@ describe('request-scoped Midnight events', () => {
     const aborted = transport();
     aborted.controller.abort();
     expect(aborted.stopped()).toBe(true);
-    await expect(aborted.source.querySignetEvents(central)).rejects.toThrow(
-      /aborted/
-    );
+    await expect(
+      collectEvents(aborted.source.streamSignetEvents(central))
+    ).rejects.toThrow(/aborted/);
     const closed = transport();
     closed.source.close();
     expect(closed.stopped()).toBe(true);
-    await expect(closed.source.querySignetEvents(central)).rejects.toThrow(
-      /closed/
-    );
+    await expect(
+      collectEvents(closed.source.streamSignetEvents(central))
+    ).rejects.toThrow(/closed/);
   });
 
   it('fails closed on stream errors and unexpected completion without reconnecting', async () => {
@@ -219,9 +260,9 @@ describe('request-scoped Midnight events', () => {
       const run = transport();
       run.emit(fixtures[0]);
       run[end]();
-      await expect(run.source.querySignetEvents(central)).rejects.toThrow(
-        /stream failed|stream ended/
-      );
+      await expect(
+        collectEvents(run.source.streamSignetEvents(central))
+      ).rejects.toThrow(/stream failed|stream ended/);
       expect(run.stopped()).toBe(true);
       expect(run.requests).toHaveLength(1);
     }
@@ -233,18 +274,18 @@ describe('request-scoped Midnight events', () => {
       id,
     }));
     const run = transport(events);
-    await expect(run.source.querySignetEvents(central)).rejects.toThrow(
-      /cache limit/
-    );
+    await expect(
+      collectEvents(run.source.streamSignetEvents(central))
+    ).rejects.toThrow(/cache limit/);
     expect(run.stopped()).toBe(true);
   });
 
   it('bounds total received traffic, including unrelated events and replay', async () => {
     const run = transport();
     for (let id = 0; id <= MAX_RECEIVED_EVENTS; id += 1) run.emit(fixtures[2]);
-    await expect(run.source.querySignetEvents(central)).rejects.toThrow(
-      /receive budget/
-    );
+    await expect(
+      collectEvents(run.source.streamSignetEvents(central))
+    ).rejects.toThrow(/receive budget/);
     expect(run.stopped()).toBe(true);
   });
 
@@ -259,13 +300,13 @@ describe('request-scoped Midnight events', () => {
         new AbortController().signal
       )
     ).toThrow(/block height/);
-    await expect(run.source.querySignetEvents('ff'.repeat(32))).rejects.toThrow(
-      /another contract/
-    );
+    await expect(
+      collectEvents(run.source.streamSignetEvents('ff'.repeat(32)))
+    ).rejects.toThrow(/another contract/);
     run.emit({ ...fixtures[0], payload: 'not-hex' });
-    await expect(run.source.querySignetEvents(central)).rejects.toThrow(
-      /payload encoding/
-    );
+    await expect(
+      collectEvents(run.source.streamSignetEvents(central))
+    ).rejects.toThrow(/payload encoding/);
     expect(run.stopped()).toBe(true);
   });
 });

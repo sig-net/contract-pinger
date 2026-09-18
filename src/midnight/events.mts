@@ -136,12 +136,13 @@ export function createRequestEventSource(
     }
   }
   return {
-    async querySignetEvents(address) {
+    async *streamSignetEvents(address) {
       if (failure) throw failure;
       if (closed) throw new Error('Midnight event stream is closed');
       if (address !== centralAddress)
         throw new Error('Midnight event source belongs to another contract');
-      return [...records.values()].map(event => ({
+      // Each poll sees a finite snapshot; later posts belong to the next poll.
+      yield* [...records.values()].map(event => ({
         name: event.name,
         payload: event.payload.slice(),
       }));

@@ -38,14 +38,14 @@ importers:
         specifier: 1.0.0-rc.3
         version: 1.0.0-rc.3
       '@sig-net/midnight':
-        specifier: 0.21.0
-        version: 0.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+        specifier: 0.22.0
+        version: 0.22.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
       '@sig-net/midnight-contract':
-        specifier: 0.21.0
-        version: 0.21.0
+        specifier: 0.22.0
+        version: 0.22.0
       '@sig-net/midnight-contract-deploy':
-        specifier: 0.21.0
-        version: 0.21.0(@effect/cluster@0.57.0(@effect/platform@0.96.3(effect@3.22.2))(@effect/rpc@0.75.1(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(@effect/sql@0.51.1(@effect/experimental@0.60.0(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(@effect/workflow@0.18.2(@effect/experimental@0.60.0(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(@effect/platform@0.96.3(effect@3.22.2))(@effect/rpc@0.75.1(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(effect@3.22.2))(effect@3.22.2))(@effect/platform@0.96.3(effect@3.22.2))(@effect/rpc@0.75.1(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(@effect/sql@0.51.1(@effect/experimental@0.60.0(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))
+        specifier: 0.22.0
+        version: 0.22.0(@effect/cluster@0.57.0(@effect/platform@0.96.3(effect@3.22.2))(@effect/rpc@0.75.1(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(@effect/sql@0.51.1(@effect/experimental@0.60.0(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(@effect/workflow@0.18.2(@effect/experimental@0.60.0(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(@effect/platform@0.96.3(effect@3.22.2))(@effect/rpc@0.75.1(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(effect@3.22.2))(effect@3.22.2))(@effect/platform@0.96.3(effect@3.22.2))(@effect/rpc@0.75.1(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(@effect/sql@0.51.1(@effect/experimental@0.60.0(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))
       '@sig-net/signet.js':
         specifier: ^0.5.2
         version: 0.5.2(bufferutil@4.1.0)(typescript@6.0.3)(utf-8-validate@6.0.6)(zod@4.5.4)
@@ -977,17 +977,17 @@ packages:
   '@scure/sr25519@0.2.0':
     resolution: {integrity: sha512-uUuLP7Z126XdSizKtrCGqYyR3b3hYtJ6Fg/XFUXmc2//k2aXHDLqZwFeXxL97gg4XydPROPVnuaHGF2+xriSKg==}
 
-  '@sig-net/midnight-contract-deploy@0.21.0':
-    resolution: {integrity: sha512-jC+IYvlggWqDHFU3mCYshGA5v6vCV/tAx07xhG+Ov4aJfhOZSNGttg298jHGrmecE0AI/HI8c79qS5Os4A4kvA==}
+  '@sig-net/midnight-contract-deploy@0.22.0':
+    resolution: {integrity: sha512-U/0ico5YvZ8kGT6hjChY8vj3sHZqH1BRJFGqdj2tNCFaUbNRp3a68w8g0qMMc2FCGOljoMVh5PtUx73xyRr0BA==}
 
-  '@sig-net/midnight-contract@0.21.0':
-    resolution: {integrity: sha512-RGH79TgtzisBbXCrYgNK0SBrp4OHtlrHBVIeISiHb/IHkf5qZoYHXiOzUI5mcKHKgqsBlzpXoDEE383DX36OUg==}
+  '@sig-net/midnight-contract@0.22.0':
+    resolution: {integrity: sha512-pwwnSji9TxRlYDPfyIGeg0TKLEdY1ooK+hSVxez4iszf0USixoScgNYHMru9sCtbPItfy5KU21quplvrY9tgQg==}
 
-  '@sig-net/midnight-serde@0.21.0':
-    resolution: {integrity: sha512-ZcsQhj1FTJg8yw0MPMVDRiGDqfJNmxPz+GZWfEcNL+kCjPCbECiEs85r6mBT7VWCqjvoosqNq7tl8bXZDH9TeA==}
+  '@sig-net/midnight-serde@0.22.0':
+    resolution: {integrity: sha512-rzJ3kSgBq0drV9jjRid/kEDDArkLJ9YWswE2euBToLPT2M8bExVOLM9d4GIPKhF7lKTx5OLKvulOvCHsaH5Maw==}
 
-  '@sig-net/midnight@0.21.0':
-    resolution: {integrity: sha512-BcWtrizGWwkaPgEMJbyFLPP8NHk1L3H4LCPHs929DkOQdZZxGU449yzty83Hz2R+chr5nbGww5I8o2QuqsxvEw==}
+  '@sig-net/midnight@0.22.0':
+    resolution: {integrity: sha512-XI32sTsDbKNFYgpmIIqChQnbTNLXP16rQzdzgtGa7rSExcOAd5D88kMNBEMBAo77Kv9VK3gGKypmefav2pvgDA==}
 
   '@sig-net/signet.js@0.5.2':
     resolution: {integrity: sha512-y9HOlwHC/GUzTqBkeuCBIbjJDidBLLQNiY2gpp3uPKkLpa8Xfg1AzYjHqexCJVAhKFozgJ72xuzs+MBQqq81+Q==}
@@ -3625,7 +3625,7 @@ snapshots:
       '@noble/curves': 1.9.7
       '@noble/hashes': 1.8.0
 
-  '@sig-net/midnight-contract-deploy@0.21.0(@effect/cluster@0.57.0(@effect/platform@0.96.3(effect@3.22.2))(@effect/rpc@0.75.1(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(@effect/sql@0.51.1(@effect/experimental@0.60.0(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(@effect/workflow@0.18.2(@effect/experimental@0.60.0(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(@effect/platform@0.96.3(effect@3.22.2))(@effect/rpc@0.75.1(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(effect@3.22.2))(effect@3.22.2))(@effect/platform@0.96.3(effect@3.22.2))(@effect/rpc@0.75.1(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(@effect/sql@0.51.1(@effect/experimental@0.60.0(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))':
+  '@sig-net/midnight-contract-deploy@0.22.0(@effect/cluster@0.57.0(@effect/platform@0.96.3(effect@3.22.2))(@effect/rpc@0.75.1(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(@effect/sql@0.51.1(@effect/experimental@0.60.0(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(@effect/workflow@0.18.2(@effect/experimental@0.60.0(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(@effect/platform@0.96.3(effect@3.22.2))(@effect/rpc@0.75.1(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(effect@3.22.2))(effect@3.22.2))(@effect/platform@0.96.3(effect@3.22.2))(@effect/rpc@0.75.1(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(@effect/sql@0.51.1(@effect/experimental@0.60.0(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))':
     dependencies:
       '@effect/platform-node': 0.108.2(@effect/cluster@0.57.0(@effect/platform@0.96.3(effect@3.22.2))(@effect/rpc@0.75.1(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(@effect/sql@0.51.1(@effect/experimental@0.60.0(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(@effect/workflow@0.18.2(@effect/experimental@0.60.0(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(@effect/platform@0.96.3(effect@3.22.2))(@effect/rpc@0.75.1(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(effect@3.22.2))(effect@3.22.2))(@effect/platform@0.96.3(effect@3.22.2))(@effect/rpc@0.75.1(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(@effect/sql@0.51.1(@effect/experimental@0.60.0(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(@effect/platform@0.96.3(effect@3.22.2))(effect@3.22.2))(bufferutil@4.1.0)(effect@3.22.2)(utf-8-validate@6.0.6)
       '@midnight-ntwrk/compact-js': 2.5.5-rc.7
@@ -3641,8 +3641,8 @@ snapshots:
       '@midnightntwrk/wallet-sdk-shielded': 4.0.0-beta.2(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))
       '@midnightntwrk/wallet-sdk-unshielded-wallet': 4.0.0-beta.2(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))
       '@scure/bip39': 2.4.0
-      '@sig-net/midnight': 0.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
-      '@sig-net/midnight-contract': 0.21.0
+      '@sig-net/midnight': 0.22.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+      '@sig-net/midnight-contract': 0.22.0
       effect: 3.22.2
     transitivePeerDependencies:
       - '@effect/cluster'
@@ -3658,19 +3658,19 @@ snapshots:
       - utf-8-validate
       - ws
 
-  '@sig-net/midnight-contract@0.21.0':
+  '@sig-net/midnight-contract@0.22.0':
     dependencies:
       '@midnight-ntwrk/compact-runtime': 0.18.0-rc.1
       '@midnight-ntwrk/midnight-js': 5.0.0-beta.6
 
-  '@sig-net/midnight-serde@0.21.0': {}
+  '@sig-net/midnight-serde@0.22.0': {}
 
-  '@sig-net/midnight@0.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)':
+  '@sig-net/midnight@0.22.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)':
     dependencies:
       '@midnight-ntwrk/compact-runtime': 0.18.0-rc.1
       '@midnight-ntwrk/midnight-js-types': 5.0.0-beta.6
       '@noble/curves': 2.4.0
-      '@sig-net/midnight-serde': 0.21.0
+      '@sig-net/midnight-serde': 0.22.0
       ethers: 6.17.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
     transitivePeerDependencies:
       - bufferutil
