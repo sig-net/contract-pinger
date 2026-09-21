@@ -157,6 +157,22 @@ pnpm fund --source-chain midnight --env stagenet
 pnpm loadtest --source-chain midnight --env stagenet --jobs 1
 ```
 
+The Compact compiler's proving assets are published for Linux x64 only, and an
+emulated amd64 build on an arm64 Mac does not complete, so there is no local
+path to a deployed caller on macOS. Use the **Bidirectional (ad hoc)** workflow
+instead: with `source_chain=midnight` it builds the caller with proving keys on
+the ARC scale set, funds the pinger wallet, deploys and initialises the caller,
+and drives the round trip against it in one run. It reads the treasury seed
+from Secret Manager at run time — `multichain-midnight-funding-seed-dev` in
+`near-cs-dev` — authenticating with `SIG_CREDENTIALS_DEV`, the same
+`near-dev-github` service-account key the MPC repository's k6 workflow uses.
+The ARC runner pods carry no GCP identity of their own, so that key is the only
+way in; the seed is never copied into a GitHub secret. Set `deploy_caller` to deploy a
+fresh caller rather than reuse `MPC_MIDNIGHT_CALLER_ADDRESS`; the address it
+settled on is printed in the run summary. Prefer reuse — the Ethereum worker
+address is derived from the caller address, so each fresh caller leaves the gas
+topped up on the previous run's worker stranded.
+
 Before deployment, fund the dedicated wallet using `fund:midnight` with explicit
 NIGHT target, transfer cap, treasury reserve and minimum DUST. Its default is a
 read-only funding preview; `--execute` transfers and saves the child seed in

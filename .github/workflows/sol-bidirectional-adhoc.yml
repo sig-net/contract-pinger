@@ -9,7 +9,14 @@ name: Bidirectional (ad hoc)
 # its dedicated wallet. `pnpm fund` derives the same Ethereum worker addresses
 # the pinger will use for either source chain.
 #
-# Funding runs first, in its own job, and is sized to the run: the step works
+# For Midnight the caller contract is built and deployed first, in its own job
+# on the ARC scale set, because a Mac cannot produce its proving assets at all.
+# That job settles the caller address — deploying a fresh one on request, or
+# verifying the configured one — and every job below takes the address from it
+# rather than from the repository variable. The Ethereum worker address is
+# derived from the caller address, so the two cannot be decided independently.
+#
+# Funding runs next, in its own job, and is sized to the run: the step works
 # out what `jobs` spread over `paths` will cost and passes that as the target,
 # so every address starts able to pay for its share rather than merely being
 # above the floor. A pool already holding it costs nothing. A job count too
@@ -67,6 +74,15 @@ on:
         required: false
         default: true
         type: boolean
+      deploy_caller:
+        description: >-
+          Deploy a fresh Midnight caller for this run instead of reusing
+          MPC_MIDNIGHT_CALLER_ADDRESS. Every run that does this strands the gas
+          topped up on the previous caller's worker, because the worker address
+          is derived from the caller address.
+        required: false
+        default: false
+        type: boolean
       midnight_target_night:
         description: Midnight pinger NIGHT target in base units
         required: false
@@ -98,12 +114,161 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The Midnight caller comes first because every other job depends on knowing
+  # its address. The Ethereum worker address is derived from it —
+  # deriveEvmAddress(root key, caller address, path) — so a caller deployed
+  # after the top-up would leave the funding job having filled an address no
+  # job will ever spend from, and the run would fail its balance check with a
+  # brand-new worker holding nothing.
+  #
+  # Deployment needs the full proving assets and an in-cluster proof server,
+  # which is why this runs on the ARC scale set rather than a hosted runner.
+  caller:
+    if: inputs.source_chain == 'midnight'
+    runs-on: arc-runner-set
+    timeout-minutes: 45
+    environment: Pinger Test ENV
+    # Shares the treasury's lock: deployment and initialisation both spend
+    # NIGHT from the same wallet the sweep draws on.
+    concurrency:
+      group: fund-bidirectional-workers
+      cancel-in-progress: false
+    outputs:
+      address: ${{ steps.caller.outputs.address }}
+      origin: ${{ steps.caller.outputs.origin }}
+    env:
+      FUND_MIDNIGHT: ${{ inputs.fund_midnight }}
+      DEPLOY_CALLER: ${{ inputs.deploy_caller }}
+      MPC_MIDNIGHT_NODE_URL: ${{ vars.MPC_MIDNIGHT_NODE_URL || 'https://rpc.stagenet.shielded.tools' }}
+      MPC_MIDNIGHT_INDEXER_URL: ${{ vars.MPC_MIDNIGHT_INDEXER_URL || 'https://indexer.stagenet.shielded.tools/api/v4/graphql' }}
+      MPC_MIDNIGHT_INDEXER_WS_URL: ${{ vars.MPC_MIDNIGHT_INDEXER_WS_URL || 'wss://indexer.stagenet.shielded.tools/api/v4/graphql/ws' }}
+      MPC_MIDNIGHT_PROOF_SERVER_URL: ${{ vars.MPC_MIDNIGHT_PROOF_SERVER_URL || 'http://midnight-proof-server.default:6300/' }}
+      MPC_MIDNIGHT_CENTRAL_ADDRESS: ${{ vars.MPC_MIDNIGHT_CENTRAL_ADDRESS || '1df4ce25fc9f9c03dc6f4d0eb12ddf3d0db094995d4c70aca1142eebb3b77a5d' }}
+      MPC_MIDNIGHT_ROOT_PUBLIC_KEY: ${{ vars.MPC_MIDNIGHT_ROOT_PUBLIC_KEY }}
+      MPC_MIDNIGHT_PINGER_SEED: ${{ secrets.MPC_MIDNIGHT_PINGER_SEED }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.14.0'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install
+
+      # Checked before the proof build rather than after it: without one of
+      # these there is no wallet to deploy from, and the failure would
+      # otherwise surface forty minutes in.
+      - name: Validate the Midnight wallet has a seed
+        run: |
+          set -euo pipefail
+          if [ "${FUND_MIDNIGHT}" = 'true' ]; then
+            if [ -z "${SIG_CREDENTIALS_DEV:-}" ]; then
+              echo '::error::SIG_CREDENTIALS_DEV is required to read the treasury seed from Secret Manager'
+              exit 1
+            fi
+          elif [ -z "${MPC_MIDNIGHT_PINGER_SEED:-}" ]; then
+            echo '::error::MPC_MIDNIGHT_PINGER_SEED is required when Midnight funding is disabled'
+            exit 1
+          fi
+        env:
+          SIG_CREDENTIALS_DEV: ${{ secrets.SIG_CREDENTIALS_DEV }}
+
+      - name: Install pinned Compact compiler
+        run: node scripts/install-compact.mjs "$RUNNER_TEMP/compact"
+
+      # Deployment submits real proofs, so the proving keys are required here;
+      # `compile:midnight` alone (--skip-zk) produces bindings that cannot
+      # deploy. This is also the only place the full build is exercised — it
+      # cannot be run on an arm64 Mac at all.
+      - name: Compile Midnight caller with proving keys
+        env:
+          COMPACTC: ${{ runner.temp }}/compact/compactc
+        run: pnpm compile:midnight:zk
+
+      # near-dev-github holds secretAccessor on the treasury seed and nothing
+      # else. The ARC runner pods have no GCP identity of their own.
+      - name: Authenticate to Google Cloud
+        if: inputs.fund_midnight
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: '${{ secrets.SIG_CREDENTIALS_DEV }}'
+
+      # Read at run time so there is no second copy to keep level, and masked,
+      # which `gcloud ... >> GITHUB_ENV` is not.
+      - name: Read the Midnight treasury seed
+        id: treasury
+        if: inputs.fund_midnight
+        uses: google-github-actions/get-secretmanager-secrets@v2
+        with:
+          secrets: |-
+            funding_seed:near-cs-dev/multichain-midnight-funding-seed-dev
+
+      # The pinger wallet is a deterministic child of the treasury seed, so
+      # this job and the load test below derive the same wallet from the same
+      # secret without the seed ever becoming a job output.
+      #
+      # Deployment and initialisation both cost NIGHT and DUST, so the wallet
+      # is topped up before either. Idempotent: a wallet already at the target
+      # transfers nothing and only waits for DUST.
+      - name: Fund Midnight pinger wallet
+        if: inputs.fund_midnight
+        env:
+          MPC_MIDNIGHT_FUNDING_SEED: ${{ steps.treasury.outputs.funding_seed }}
+        run: |
+          set -euo pipefail
+          pnpm fund:midnight \
+            --target-night "${{ inputs.midnight_target_night }}" \
+            --max-transfer-night "${{ inputs.midnight_max_transfer_night }}" \
+            --reserve-night "${{ inputs.midnight_reserve_night }}" \
+            --minimum-dust "${{ inputs.midnight_minimum_dust }}" \
+            --execute
+
+      - name: Deploy or verify the Midnight caller
+        id: caller
+        env:
+          # Deliberately not inherited from the job: `deploy:midnight` refuses
+          # to deploy while a caller is configured, so the fresh path has to
+          # see this unset and the reuse path has to see it set.
+          CONFIGURED_CALLER: ${{ vars.MPC_MIDNIGHT_CALLER_ADDRESS }}
+        run: |
+          set -euo pipefail
+          if [ "${DEPLOY_CALLER}" = 'true' ] || [ -z "${CONFIGURED_CALLER:-}" ]; then
+            if [ -n "${CONFIGURED_CALLER:-}" ]; then
+              echo "::notice::Deploying a fresh caller; MPC_MIDNIGHT_CALLER_ADDRESS (${CONFIGURED_CALLER}) is ignored for this run."
+            fi
+            origin='deployed this run'
+            pnpm deploy:midnight
+            pnpm deploy:midnight --initialise
+          else
+            # Not a no-op: this joins the recorded caller, checks its
+            # destination chain and re-pins the response key, so a caller that
+            # was deployed but never initialised is finished here rather than
+            # failing the first round trip.
+            echo "Reusing configured Midnight caller ${CONFIGURED_CALLER}"
+            origin='reused'
+            MPC_MIDNIGHT_CALLER_ADDRESS="${CONFIGURED_CALLER}" pnpm deploy:midnight --initialise
+          fi
+          address=$(jq -er '.contractAddress' .midnight/deployment.json)
+          status=$(jq -er '.status' .midnight/deployment.json)
+          if [ "${status}" != 'initialised' ]; then
+            echo "::error::Caller ${address} is ${status}, not initialised"
+            exit 1
+          fi
+          echo "address=${address}" >> "${GITHUB_OUTPUT}"
+          echo "origin=${origin}" >> "${GITHUB_OUTPUT}"
+          echo "::notice::Midnight caller ${address} (${origin})"
+
   # Separate from the load test so the two hold different locks. This job takes
   # the scheduled sweep's concurrency group — both spend from the same wallet,
   # and two senders racing one nonce leaves a stuck transaction — while the load
   # test below runs outside it. Putting the group on the whole workflow instead
   # would block every scheduled sweep for the two hours a run can last.
   fund:
+    needs: caller
+    # `caller` is skipped entirely for Solana runs, which is not a failure.
+    if: ${{ !cancelled() && needs.caller.result != 'failure' }}
     # This workflow needs the in-cluster proof server when testing Midnight.
     # The ARC scale set provides the `midnight-proof-server.default` DNS path.
     runs-on: arc-runner-set
@@ -126,7 +291,10 @@ jobs:
       SIG_BIDIRECTIONAL_PATHS: ${{ inputs.source_chain == 'midnight' && '1' || inputs.paths }}
       SIG_BIDIRECTIONAL_PATH_PREFIX: ${{ vars.SIG_BIDIRECTIONAL_PATH_PREFIX }}
       SIG_SOL_ROOT_PUBLIC_KEY: ${{ vars.SIG_SOL_ROOT_PUBLIC_KEY }}
-      MPC_MIDNIGHT_CALLER_ADDRESS: ${{ vars.MPC_MIDNIGHT_CALLER_ADDRESS }}
+      # From the caller job, not the repository variable: a fresh deployment
+      # derives a different worker, and topping up the old one would report
+      # success while the run starves.
+      MPC_MIDNIGHT_CALLER_ADDRESS: ${{ needs.caller.outputs.address }}
       MPC_MIDNIGHT_ROOT_PUBLIC_KEY: ${{ vars.MPC_MIDNIGHT_ROOT_PUBLIC_KEY }}
       MPC_MIDNIGHT_CENTRAL_ADDRESS: ${{ vars.MPC_MIDNIGHT_CENTRAL_ADDRESS }}
       # The floor of the band, and the same figure the load test job below
@@ -226,7 +394,8 @@ jobs:
           GAS_MARGIN: ${{ steps.config.outputs.gas_margin }}
 
   loadtest:
-    needs: fund
+    needs: [caller, fund]
+    if: ${{ !cancelled() && needs.caller.result != 'failure' && needs.fund.result == 'success' }}
     # GitHub-hosted runners cannot resolve Kubernetes service DNS names.
     runs-on: arc-runner-set
     # Submission is bounded by the arrival-rate limit and the last job then
@@ -255,7 +424,10 @@ jobs:
       MPC_MIDNIGHT_INDEXER_WS_URL: ${{ vars.MPC_MIDNIGHT_INDEXER_WS_URL || 'wss://indexer.stagenet.shielded.tools/api/v4/graphql/ws' }}
       MPC_MIDNIGHT_PROOF_SERVER_URL: ${{ vars.MPC_MIDNIGHT_PROOF_SERVER_URL || 'http://midnight-proof-server.default:6300/' }}
       MPC_MIDNIGHT_CENTRAL_ADDRESS: ${{ vars.MPC_MIDNIGHT_CENTRAL_ADDRESS || '1df4ce25fc9f9c03dc6f4d0eb12ddf3d0db094995d4c70aca1142eebb3b77a5d' }}
-      MPC_MIDNIGHT_CALLER_ADDRESS: ${{ vars.MPC_MIDNIGHT_CALLER_ADDRESS }}
+      # The caller the `caller` job deployed or verified. The service also
+      # falls back to .midnight/deployment.json, but that file lives on the
+      # other runner, so this is the only link between the two jobs.
+      MPC_MIDNIGHT_CALLER_ADDRESS: ${{ needs.caller.outputs.address }}
       MPC_MIDNIGHT_ROOT_PUBLIC_KEY: ${{ vars.MPC_MIDNIGHT_ROOT_PUBLIC_KEY }}
       MPC_MIDNIGHT_PINGER_SEED: ${{ secrets.MPC_MIDNIGHT_PINGER_SEED }}
     steps:
@@ -293,7 +465,12 @@ jobs:
                 exit 1
               fi
             done
-            if [ "${FUND_MIDNIGHT}" != 'true' ] && [ -z "${MPC_MIDNIGHT_PINGER_SEED:-}" ]; then
+            if [ "${FUND_MIDNIGHT}" = 'true' ]; then
+              if [ -z "${SIG_CREDENTIALS_DEV:-}" ]; then
+                echo '::error::SIG_CREDENTIALS_DEV is required to read the treasury seed from Secret Manager'
+                exit 1
+              fi
+            elif [ -z "${MPC_MIDNIGHT_PINGER_SEED:-}" ]; then
               echo '::error::MPC_MIDNIGHT_PINGER_SEED is required when Midnight funding is disabled'
               exit 1
             fi
@@ -305,6 +482,8 @@ jobs:
               fi
             done
           fi
+        env:
+          SIG_CREDENTIALS_DEV: ${{ secrets.SIG_CREDENTIALS_DEV }}
 
       - name: Install pinned Compact compiler
         run: node scripts/install-compact.mjs "$RUNNER_TEMP/compact"
@@ -317,26 +496,27 @@ jobs:
       - name: Build
         run: pnpm build
 
-      - name: Set up Google Cloud CLI
+      - name: Authenticate to Google Cloud
         if: inputs.source_chain == 'midnight' && inputs.fund_midnight
-        uses: google-github-actions/setup-gcloud@v2
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: '${{ secrets.SIG_CREDENTIALS_DEV }}'
 
-      - name: Read Midnight funding seed
+      - name: Read the Midnight treasury seed
+        id: treasury
         if: inputs.source_chain == 'midnight' && inputs.fund_midnight
-        run: |
-          set -euo pipefail
-          seed=$(gcloud secrets versions access latest \
-            --secret=multichain-midnight-funding-seed-dev \
-            --project=near-cs-dev)
-          if ! [[ "${seed}" =~ ^[0-9a-fA-F]{64}$ ]]; then
-            echo '::error::The GCP secret is not a 32-byte hexadecimal seed'
-            exit 1
-          fi
-          echo "::add-mask::${seed}"
-          echo "MPC_MIDNIGHT_FUNDING_SEED=${seed}" >> "${GITHUB_ENV}"
+        uses: google-github-actions/get-secretmanager-secrets@v2
+        with:
+          secrets: |-
+            funding_seed:near-cs-dev/multichain-midnight-funding-seed-dev
 
+      # Re-derives the same pinger wallet the caller job used, which is how
+      # this runner gets .midnight/pinger.env without the seed crossing
+      # between jobs. Idempotent: at target it transfers nothing.
       - name: Fund Midnight pinger wallet
         if: inputs.source_chain == 'midnight' && inputs.fund_midnight
+        env:
+          MPC_MIDNIGHT_FUNDING_SEED: ${{ steps.treasury.outputs.funding_seed }}
         run: |
           set -euo pipefail
           pnpm fund:midnight \
@@ -345,23 +525,6 @@ jobs:
             --reserve-night "${{ inputs.midnight_reserve_night }}" \
             --minimum-dust "${{ inputs.midnight_minimum_dust }}" \
             --execute
-
-      - name: Deploy and initialize Midnight caller
-        if: inputs.source_chain == 'midnight'
-        id: midnight-caller
-        run: |
-          set -euo pipefail
-          if [ -n "${MPC_MIDNIGHT_CALLER_ADDRESS:-}" ]; then
-            echo "Using configured Midnight caller ${MPC_MIDNIGHT_CALLER_ADDRESS}"
-            pnpm deploy:midnight --initialise
-          else
-            pnpm deploy:midnight
-            pnpm deploy:midnight --initialise
-          fi
-          caller=$(jq -er '.contractAddress' .midnight/deployment.json)
-          echo "MPC_MIDNIGHT_CALLER_ADDRESS=${caller}" >> "${GITHUB_ENV}"
-          echo "caller_address=${caller}" >> "${GITHUB_OUTPUT}"
-          echo "Using Midnight caller ${caller}"
 
       - name: Start the pinger
         run: |
@@ -452,6 +615,9 @@ jobs:
             echo "- Mode: \`${{ inputs.mode }}\`"
             echo "- Jobs: \`${{ inputs.jobs }}\` across \`${{ inputs.source_chain == 'midnight' && '1' || inputs.paths }}\` addresses"
             echo "- Top-up: \`${{ needs.fund.outputs.result }}\`"
+            if [ -n "${MPC_MIDNIGHT_CALLER_ADDRESS:-}" ]; then
+              echo "- Midnight caller: \`${MPC_MIDNIGHT_CALLER_ADDRESS}\` (${{ needs.caller.outputs.origin }})"
+            fi
             echo
             if [ -f loadtest.log ]; then
               echo '```'
