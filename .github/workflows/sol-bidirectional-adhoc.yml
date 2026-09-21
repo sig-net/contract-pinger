@@ -1,13 +1,13 @@
-name: Solana Bidirectional (ad hoc)
+name: Bidirectional (ad hoc)
 
 # Runs a load test entirely inside the job: it starts a pinger, drives it, and
 # throws it away. Nothing external is touched beyond the chains themselves, so
 # this needs no access to the deployed service and cannot disturb it.
 #
-# The addresses under test are derived from this environment's SIG_SOL_SK and
-# from the chosen network's program, so each network has its own pool and both
-# have to be funded separately. `pnpm fund` derives the same sets from the same
-# key.
+# The source chain and MPC environment are selected independently. Solana uses
+# the configured program/requester pool; Midnight uses the deployed caller and
+# its dedicated wallet. `pnpm fund` derives the same Ethereum worker addresses
+# the pinger will use for either source chain.
 #
 # Funding runs first, in its own job, and is sized to the run: the step works
 # out what `jobs` spread over `paths` will cost and passes that as the target,
@@ -27,14 +27,23 @@ on:
         required: false
         default: '50'
         type: string
+      source_chain:
+        description: Source chain for the round trip
+        required: false
+        default: midnight
+        type: choice
+        options:
+          - midnight
+          - solana
       env:
         description: MPC network
         required: false
-        default: testnet
+        default: stagenet
         type: choice
         options:
           - dev
           - testnet
+          - stagenet
       mode:
         description: Transaction mode
         required: false
@@ -86,9 +95,12 @@ jobs:
       # The address set is a function of these four. They are repeated verbatim
       # on the load test job below, because funding a set the run does not use
       # is silent: the sweep reports success and every job still starves.
-      SIG_BIDIRECTIONAL_PATHS: ${{ inputs.paths }}
+      SIG_BIDIRECTIONAL_PATHS: ${{ inputs.source_chain == 'midnight' && '1' || inputs.paths }}
       SIG_BIDIRECTIONAL_PATH_PREFIX: ${{ vars.SIG_BIDIRECTIONAL_PATH_PREFIX }}
       SIG_SOL_ROOT_PUBLIC_KEY: ${{ vars.SIG_SOL_ROOT_PUBLIC_KEY }}
+      MPC_MIDNIGHT_CALLER_ADDRESS: ${{ vars.MPC_MIDNIGHT_CALLER_ADDRESS }}
+      MPC_MIDNIGHT_ROOT_PUBLIC_KEY: ${{ vars.MPC_MIDNIGHT_ROOT_PUBLIC_KEY }}
+      MPC_MIDNIGHT_CENTRAL_ADDRESS: ${{ vars.MPC_MIDNIGHT_CENTRAL_ADDRESS }}
       # The floor of the band, and the same figure the load test job below
       # passes to the service. One variable, so there is no pair to keep level
       # and no gap for an address to be stranded in: too poor to lease, too
@@ -118,7 +130,7 @@ jobs:
       # is what lets every funding variable above pass through unset.
       - name: Resolve funding configuration
         id: config
-        run: pnpm fund:config >> "${GITHUB_OUTPUT}"
+        run: pnpm exec tsx scripts/fund-config.ts >> "${GITHUB_OUTPUT}"
 
       - name: Fund every address for the run about to be driven
         id: fund
@@ -161,7 +173,7 @@ jobs:
           prog='import sys; from decimal import Decimal as D; floor = D(sys.argv[1]) / D(10) ** 18; per_address = -(-int(sys.argv[2]) // int(sys.argv[3])); need = per_address * D(sys.argv[4]) * D(sys.argv[5]); print(max(floor + need, D(sys.argv[6])).quantize(D("1e-18")))'
           target=$(python3 -c "${prog}" "${FLOOR_WEI}" "${JOBS}" "${PATHS}" "${GAS_PER_RUN_ETH}" "${GAS_MARGIN}" "${BAND_TOPUP_ETH}")
           echo "Funding ${PATHS} address(es) to ${target} ETH for ${JOBS} job(s)."
-          if pnpm fund --env "${ENV}" --topup "${target}" 2>&1 | tee fund.log; then
+          if pnpm fund --source-chain "${SOURCE_CHAIN}" --env "${ENV}" --topup "${target}" 2>&1 | tee fund.log; then
             echo 'result=ok' >> "${GITHUB_OUTPUT}"
           else
             echo 'result=failed' >> "${GITHUB_OUTPUT}"
@@ -172,8 +184,9 @@ jobs:
           fi
         env:
           ENV: ${{ inputs.env }}
+          SOURCE_CHAIN: ${{ inputs.source_chain }}
           JOBS: ${{ inputs.jobs }}
-          PATHS: ${{ inputs.paths }}
+          PATHS: ${{ inputs.source_chain == 'midnight' && '1' || inputs.paths }}
           # Measured for eth_self_transfer. erc20_zero_transfer costs more, so
           # this is the floor of the two and the margin absorbs the difference;
           # re-measure and raise it if that stops being true.
@@ -199,12 +212,22 @@ jobs:
       SIG_ETH_RPC_URL_SEPOLIA: ${{ secrets.SIG_ETH_RPC_URL_SEPOLIA }}
       SIG_SOL_RPC_URL_DEV: ${{ secrets.SIG_SOL_RPC_URL_DEV }}
       SIG_SOL_SK: ${{ secrets.SIG_SOL_SK }}
+      SOURCE_CHAIN: ${{ inputs.source_chain }}
+      ENV: ${{ inputs.env }}
       # Verbatim from the fund job above: these four decide which addresses are
       # derived, and the two jobs have to land on the same set.
-      SIG_BIDIRECTIONAL_PATHS: ${{ inputs.paths }}
+      SIG_BIDIRECTIONAL_PATHS: ${{ inputs.source_chain == 'midnight' && '1' || inputs.paths }}
       SIG_BIDIRECTIONAL_PATH_PREFIX: ${{ vars.SIG_BIDIRECTIONAL_PATH_PREFIX }}
       SIG_SOL_ROOT_PUBLIC_KEY: ${{ vars.SIG_SOL_ROOT_PUBLIC_KEY }}
       SIG_BIDIRECTIONAL_MIN_BALANCE_WEI: ${{ vars.SIG_BIDIRECTIONAL_MIN_BALANCE_WEI }}
+      MPC_MIDNIGHT_NODE_URL: ${{ vars.MPC_MIDNIGHT_NODE_URL }}
+      MPC_MIDNIGHT_INDEXER_URL: ${{ vars.MPC_MIDNIGHT_INDEXER_URL }}
+      MPC_MIDNIGHT_INDEXER_WS_URL: ${{ vars.MPC_MIDNIGHT_INDEXER_WS_URL }}
+      MPC_MIDNIGHT_PROOF_SERVER_URL: ${{ vars.MPC_MIDNIGHT_PROOF_SERVER_URL }}
+      MPC_MIDNIGHT_CENTRAL_ADDRESS: ${{ vars.MPC_MIDNIGHT_CENTRAL_ADDRESS }}
+      MPC_MIDNIGHT_CALLER_ADDRESS: ${{ vars.MPC_MIDNIGHT_CALLER_ADDRESS }}
+      MPC_MIDNIGHT_ROOT_PUBLIC_KEY: ${{ vars.MPC_MIDNIGHT_ROOT_PUBLIC_KEY }}
+      MPC_MIDNIGHT_PINGER_SEED: ${{ secrets.MPC_MIDNIGHT_PINGER_SEED }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -219,12 +242,35 @@ jobs:
       - name: Validate required secrets
         run: |
           set -euo pipefail
-          for name in SIG_ETH_RPC_URL_SEPOLIA SIG_SOL_RPC_URL_DEV SIG_SOL_SK; do
+          case "${SOURCE_CHAIN}:${ENV}" in
+            midnight:stagenet|solana:dev|solana:testnet) ;;
+            *)
+              echo "::error::Unsupported source/environment combination: ${SOURCE_CHAIN}/${ENV}"
+              echo '::error::Use midnight with stagenet, or solana with dev/testnet.'
+              exit 1
+              ;;
+          esac
+          for name in SIG_ETH_RPC_URL_SEPOLIA; do
             if [ -z "${!name:-}" ]; then
               echo "::error::Missing required secret: ${name}"
               exit 1
             fi
           done
+          if [ "${SOURCE_CHAIN}" = midnight ]; then
+            for name in MPC_MIDNIGHT_NODE_URL MPC_MIDNIGHT_INDEXER_URL MPC_MIDNIGHT_PROOF_SERVER_URL MPC_MIDNIGHT_CENTRAL_ADDRESS MPC_MIDNIGHT_CALLER_ADDRESS MPC_MIDNIGHT_PINGER_SEED; do
+              if [ -z "${!name:-}" ]; then
+                echo "::error::Missing Midnight configuration: ${name}"
+                exit 1
+              fi
+            done
+          else
+            for name in SIG_SOL_RPC_URL_DEV SIG_SOL_SK; do
+              if [ -z "${!name:-}" ]; then
+                echo "::error::Missing Solana secret: ${name}"
+                exit 1
+              fi
+            done
+          fi
 
       - name: Install pinned Compact compiler
         run: node scripts/install-compact.mjs "$RUNNER_TEMP/compact"
@@ -266,7 +312,7 @@ jobs:
           set -euo pipefail
           curl -sS --fail-with-body \
             -H "x-api-secret: ${API_SECRET}" \
-            "http://localhost:${PORT}/sign_bidirectional/workers?env=${ENV}" \
+            "http://localhost:${PORT}/sign_bidirectional/workers?env=${ENV}&sourceChain=${SOURCE_CHAIN}" \
             | tee workers.json \
             | jq -r '.workers[] | "  \(.path)  \(.address)  \(.balanceWei) wei\(if .underfunded then "  UNDERFUNDED" else "" end)"'
 
@@ -290,6 +336,7 @@ jobs:
           fi
         env:
           ENV: ${{ inputs.env }}
+          SOURCE_CHAIN: ${{ inputs.source_chain }}
           FUND_RESULT: ${{ needs.fund.outputs.result }}
 
       # The driver exits non-zero if any job failed, so a single MPC timeout in
@@ -302,6 +349,7 @@ jobs:
           pnpm loadtest \
             --jobs "${{ inputs.jobs }}" \
             --env "${{ inputs.env }}" \
+            --source-chain "${{ inputs.source_chain }}" \
             --mode "${{ inputs.mode }}" \
             --url "http://localhost:${PORT}" \
             | tee loadtest.log
@@ -317,11 +365,12 @@ jobs:
         if: always()
         run: |
           {
-            echo "## Solana Bidirectional (ad hoc)"
+            echo "## Bidirectional (ad hoc)"
             echo
+            echo "- Source chain: \`${{ inputs.source_chain }}\`"
             echo "- Network: \`${{ inputs.env }}\`"
             echo "- Mode: \`${{ inputs.mode }}\`"
-            echo "- Jobs: \`${{ inputs.jobs }}\` across \`${{ inputs.paths }}\` addresses"
+            echo "- Jobs: \`${{ inputs.jobs }}\` across \`${{ inputs.source_chain == 'midnight' && '1' || inputs.paths }}\` addresses"
             echo "- Top-up: \`${{ needs.fund.outputs.result }}\`"
             echo
             if [ -f loadtest.log ]; then
