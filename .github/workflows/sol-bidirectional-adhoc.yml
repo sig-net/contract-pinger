@@ -62,6 +62,31 @@ on:
         required: false
         default: true
         type: boolean
+      fund_midnight:
+        description: Fund the Midnight pinger wallet from the dev treasury
+        required: false
+        default: true
+        type: boolean
+      midnight_target_night:
+        description: Midnight pinger NIGHT target in base units
+        required: false
+        default: '50000000000'
+        type: string
+      midnight_max_transfer_night:
+        description: Midnight per-run NIGHT transfer cap in base units
+        required: false
+        default: '50000000000'
+        type: string
+      midnight_reserve_night:
+        description: Midnight treasury NIGHT reserve in base units
+        required: false
+        default: '0'
+        type: string
+      midnight_minimum_dust:
+        description: Minimum DUST to wait for, in base units
+        required: false
+        default: '1'
+        type: string
 
 permissions:
   contents: read
@@ -93,6 +118,7 @@ jobs:
       SIG_ETH_RPC_URL_SEPOLIA: ${{ secrets.SIG_ETH_RPC_URL_SEPOLIA }}
       SIG_SOL_RPC_URL_DEV: ${{ secrets.SIG_SOL_RPC_URL_DEV }}
       SIG_SOL_SK: ${{ secrets.SIG_SOL_SK }}
+      FUND_MIDNIGHT: ${{ inputs.fund_midnight }}
       SIG_BIDIRECTIONAL_FUNDING_SK: ${{ secrets.SIG_BIDIRECTIONAL_FUNDING_SK }}
       # The address set is a function of these four. They are repeated verbatim
       # on the load test job below, because funding a set the run does not use
@@ -217,6 +243,7 @@ jobs:
       SIG_SOL_SK: ${{ secrets.SIG_SOL_SK }}
       SOURCE_CHAIN: ${{ inputs.source_chain }}
       ENV: ${{ inputs.env }}
+      FUND_MIDNIGHT: ${{ inputs.fund_midnight }}
       # Verbatim from the fund job above: these four decide which addresses are
       # derived, and the two jobs have to land on the same set.
       SIG_BIDIRECTIONAL_PATHS: ${{ inputs.source_chain == 'midnight' && '1' || inputs.paths }}
@@ -260,12 +287,16 @@ jobs:
             fi
           done
           if [ "${SOURCE_CHAIN}" = midnight ]; then
-            for name in MPC_MIDNIGHT_NODE_URL MPC_MIDNIGHT_INDEXER_URL MPC_MIDNIGHT_PROOF_SERVER_URL MPC_MIDNIGHT_CENTRAL_ADDRESS MPC_MIDNIGHT_PINGER_SEED; do
+            for name in MPC_MIDNIGHT_NODE_URL MPC_MIDNIGHT_INDEXER_URL MPC_MIDNIGHT_PROOF_SERVER_URL MPC_MIDNIGHT_CENTRAL_ADDRESS; do
               if [ -z "${!name:-}" ]; then
                 echo "::error::Missing Midnight configuration: ${name}"
                 exit 1
               fi
             done
+            if [ "${FUND_MIDNIGHT}" != 'true' ] && [ -z "${MPC_MIDNIGHT_PINGER_SEED:-}" ]; then
+              echo '::error::MPC_MIDNIGHT_PINGER_SEED is required when Midnight funding is disabled'
+              exit 1
+            fi
           else
             for name in SIG_SOL_RPC_URL_DEV SIG_SOL_SK; do
               if [ -z "${!name:-}" ]; then
@@ -285,6 +316,35 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      - name: Set up Google Cloud CLI
+        if: inputs.source_chain == 'midnight' && inputs.fund_midnight
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Read Midnight funding seed
+        if: inputs.source_chain == 'midnight' && inputs.fund_midnight
+        run: |
+          set -euo pipefail
+          seed=$(gcloud secrets versions access latest \
+            --secret=multichain-midnight-funding-seed-dev \
+            --project=near-cs-dev)
+          if ! [[ "${seed}" =~ ^[0-9a-fA-F]{64}$ ]]; then
+            echo '::error::The GCP secret is not a 32-byte hexadecimal seed'
+            exit 1
+          fi
+          echo "::add-mask::${seed}"
+          echo "MPC_MIDNIGHT_FUNDING_SEED=${seed}" >> "${GITHUB_ENV}"
+
+      - name: Fund Midnight pinger wallet
+        if: inputs.source_chain == 'midnight' && inputs.fund_midnight
+        run: |
+          set -euo pipefail
+          pnpm fund:midnight \
+            --target-night "${{ inputs.midnight_target_night }}" \
+            --max-transfer-night "${{ inputs.midnight_max_transfer_night }}" \
+            --reserve-night "${{ inputs.midnight_reserve_night }}" \
+            --minimum-dust "${{ inputs.midnight_minimum_dust }}" \
+            --execute
 
       - name: Deploy and initialize Midnight caller
         if: inputs.source_chain == 'midnight'
