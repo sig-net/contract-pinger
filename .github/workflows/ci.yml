@@ -19,7 +19,13 @@ jobs:
           node-version: '22.14.0'
           cache: 'pnpm'
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
+      - name: Install pinned Compact compiler
+        run: node scripts/install-compact.mjs "$RUNNER_TEMP/compact"
+      - name: Compile Midnight caller (without proof keys)
+        env:
+          COMPACTC: ${{ runner.temp }}/compact/compactc
+        run: pnpm compile:midnight
       - name: Build
         run: pnpm build
       # `pnpm build` only compiles src/. Tests and scripts import from it and
@@ -39,7 +45,7 @@ jobs:
           node-version: '22.14.0'
           cache: 'pnpm'
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
       - name: Run Prettier check
         run: pnpm prettier --check .
 
@@ -68,6 +74,12 @@ jobs:
           node-version: '22.14.0'
           cache: 'pnpm'
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
+      - name: Install pinned Compact compiler
+        run: node scripts/install-compact.mjs "$RUNNER_TEMP/compact"
+      - name: Compile Midnight caller (without proof keys)
+        env:
+          COMPACTC: ${{ runner.temp }}/compact/compactc
+        run: pnpm compile:midnight
       - name: Run tests
         run: pnpm test

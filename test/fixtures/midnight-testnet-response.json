@@ -1,0 +1,41 @@
+{
+  "source": {
+    "network": "stagenet",
+    "mpcEnvironment": "TESTNET",
+    "mpcCommit": "acb66f751350b7c9e7a028095e4700214ef3a52a",
+    "sourceTransaction": "00bd0d197a4af37cf4bdb3beca2b4dc499fe4ec43bef9854a72626ee92f7525740",
+    "returnTransaction": "00601b683d532301994b2022c8c37f04820cece64d240829d0ae1b45c678131250",
+    "ethereumTransaction": "0x6e9993b75692fcc0d117e6e5a40d0021eb5526ce6db59304c6aa5257cc0505f8",
+    "eventId": 37693
+  },
+  "rootPublicKey": "secp256k1:3Ww8iFjqTHufye5aRGUvrQqETegR4gVUcW8FX5xzscaN9ENhpkffojsxJwi6N1RbbHMTxYa9UyKeqK3fsMuwxjR5",
+  "centralAddress": "1df4ce25fc9f9c03dc6f4d0eb12ddf3d0db094995d4c70aca1142eebb3b77a5d",
+  "callerAddress": "dcbc948e78217417093991f911a6f17de1e77db8cd2d841af6fab94f3e6c0252",
+  "requestId": "5ac76542f4dd053b159b7f3ef2225131417f01ae39cbfaf15fa542534cb08c00",
+  "path": "27d2ee0c801c26c66f3692d4a2eec25cdae65669c894ca9426c7dd3a4f33aefb",
+  "transaction": {
+    "chainId": "11155111",
+    "nonce": "0",
+    "maxPriorityFeePerGas": "1000000",
+    "maxFeePerGas": "1271078048",
+    "gasLimit": "25200",
+    "to": "ec80cb64524ca08fe119612c71ca3c36ccb472f3",
+    "value": "0",
+    "calldata": {
+      "is_some": false,
+      "value": {
+        "selector": "00000000",
+        "noWords": "0",
+        "words": [
+          "0000000000000000000000000000000000000000000000000000000000000000",
+          "0000000000000000000000000000000000000000000000000000000000000000"
+        ]
+      }
+    },
+    "accessListEntryCount": "0",
+    "accessList": []
+  },
+  "responsePayload": "5ac76542f4dd053b159b7f3ef2225131417f01ae39cbfaf15fa542534cb08c006946813d9a2ecf342256f607419203128b6e84a7a42cd06a69feee0069df3591642cb1909fbbb73a1c36712b54ffc33cc8e89bf885660d2b246bbbf52cd9a6255f110914acdc55fc70dcb2a50caeaa4864dca4dc4a22c27fbd9f77969c8c5db20100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+  "output": "01",
+  "attestationDigest": "1400460ac5e4d9c2564bec405ec428c82ed19387a675895d561e561391c90400"
+}

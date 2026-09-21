@@ -1,15 +1,22 @@
-name: Solana Bidirectional (ad hoc)
+name: Bidirectional (ad hoc)
 
 # Runs a load test entirely inside the job: it starts a pinger, drives it, and
 # throws it away. Nothing external is touched beyond the chains themselves, so
 # this needs no access to the deployed service and cannot disturb it.
 #
-# The addresses under test are derived from this environment's SIG_SOL_SK and
-# from the chosen network's program, so each network has its own pool and both
-# have to be funded separately. `pnpm fund` derives the same sets from the same
-# key.
+# The source chain and MPC environment are selected independently. Solana uses
+# the configured program/requester pool; Midnight uses the deployed caller and
+# its dedicated wallet. `pnpm fund` derives the same Ethereum worker addresses
+# the pinger will use for either source chain.
 #
-# Funding runs first, in its own job, and is sized to the run: the step works
+# For Midnight the caller contract is built and deployed first, in its own job
+# on the ARC scale set, because a Mac cannot produce its proving assets at all.
+# That job settles the caller address — deploying a fresh one on request, or
+# verifying the configured one — and every job below takes the address from it
+# rather than from the repository variable. The Ethereum worker address is
+# derived from the caller address, so the two cannot be decided independently.
+#
+# Funding runs next, in its own job, and is sized to the run: the step works
 # out what `jobs` spread over `paths` will cost and passes that as the target,
 # so every address starts able to pay for its share rather than merely being
 # above the floor. A pool already holding it costs nothing. A job count too
@@ -27,14 +34,23 @@ on:
         required: false
         default: '50'
         type: string
+      source_chain:
+        description: Source chain for the round trip
+        required: false
+        default: midnight
+        type: choice
+        options:
+          - midnight
+          - solana
       env:
         description: MPC network
         required: false
-        default: testnet
+        default: stagenet
         type: choice
         options:
           - dev
           - testnet
+          - stagenet
       mode:
         description: Transaction mode
         required: false
@@ -53,6 +69,46 @@ on:
         required: false
         default: true
         type: boolean
+      fund_midnight:
+        description: Fund the Midnight pinger wallet from the dev treasury
+        required: false
+        default: true
+        type: boolean
+      deploy_caller:
+        description: >-
+          Deploy a fresh Midnight caller for this run instead of reusing
+          MPC_MIDNIGHT_CALLER_ADDRESS. Every run that does this strands the gas
+          topped up on the previous caller's worker, because the worker address
+          is derived from the caller address.
+        required: false
+        default: false
+        type: boolean
+      # Sized to the stagenet treasury as measured on 2026-09-21: it held
+      # 15983028000, so the original 50000000000 target could never be met and
+      # every run died on the reserve guard after five minutes of syncing.
+      # Raise these only alongside a treasury top-up.
+      midnight_target_night:
+        description: Midnight pinger NIGHT target in base units
+        required: false
+        default: '10000000000'
+        type: string
+      midnight_max_transfer_night:
+        description: Midnight per-run NIGHT transfer cap in base units
+        required: false
+        default: '10000000000'
+        type: string
+      # Non-zero so a run cannot empty the treasury outright; the sweep needs
+      # something left to pay its own DUST fees with.
+      midnight_reserve_night:
+        description: Midnight treasury NIGHT reserve in base units
+        required: false
+        default: '2000000000'
+        type: string
+      midnight_minimum_dust:
+        description: Minimum DUST to wait for, in base units
+        required: false
+        default: '1'
+        type: string
 
 permissions:
   contents: read
@@ -64,13 +120,164 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The Midnight caller comes first because every other job depends on knowing
+  # its address. The Ethereum worker address is derived from it —
+  # deriveEvmAddress(root key, caller address, path) — so a caller deployed
+  # after the top-up would leave the funding job having filled an address no
+  # job will ever spend from, and the run would fail its balance check with a
+  # brand-new worker holding nothing.
+  #
+  # Deployment needs the full proving assets and an in-cluster proof server,
+  # which is why this runs on the ARC scale set rather than a hosted runner.
+  caller:
+    if: inputs.source_chain == 'midnight'
+    runs-on: arc-runner-set
+    timeout-minutes: 45
+    environment: Pinger Test ENV
+    # Shares the treasury's lock: deployment and initialisation both spend
+    # NIGHT from the same wallet the sweep draws on.
+    concurrency:
+      group: fund-bidirectional-workers
+      cancel-in-progress: false
+    outputs:
+      address: ${{ steps.caller.outputs.address }}
+      origin: ${{ steps.caller.outputs.origin }}
+    env:
+      FUND_MIDNIGHT: ${{ inputs.fund_midnight }}
+      DEPLOY_CALLER: ${{ inputs.deploy_caller }}
+      MPC_MIDNIGHT_NODE_URL: ${{ vars.MPC_MIDNIGHT_NODE_URL || 'https://rpc.stagenet.shielded.tools' }}
+      MPC_MIDNIGHT_INDEXER_URL: ${{ vars.MPC_MIDNIGHT_INDEXER_URL || 'https://indexer.stagenet.shielded.tools/api/v4/graphql' }}
+      MPC_MIDNIGHT_INDEXER_WS_URL: ${{ vars.MPC_MIDNIGHT_INDEXER_WS_URL || 'wss://indexer.stagenet.shielded.tools/api/v4/graphql/ws' }}
+      MPC_MIDNIGHT_PROOF_SERVER_URL: ${{ vars.MPC_MIDNIGHT_PROOF_SERVER_URL || 'http://midnight-proof-server.default:6300/' }}
+      MPC_MIDNIGHT_CENTRAL_ADDRESS: ${{ vars.MPC_MIDNIGHT_CENTRAL_ADDRESS || '1df4ce25fc9f9c03dc6f4d0eb12ddf3d0db094995d4c70aca1142eebb3b77a5d' }}
+      MPC_MIDNIGHT_ROOT_PUBLIC_KEY: ${{ vars.MPC_MIDNIGHT_ROOT_PUBLIC_KEY }}
+      MPC_MIDNIGHT_PINGER_SEED: ${{ secrets.MPC_MIDNIGHT_PINGER_SEED }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.14.0'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install
+
+      # Checked before the proof build rather than after it: without one of
+      # these there is no wallet to deploy from, and the failure would
+      # otherwise surface forty minutes in.
+      - name: Validate the Midnight wallet has a seed
+        run: |
+          set -euo pipefail
+          if [ "${FUND_MIDNIGHT}" = 'true' ]; then
+            if [ -z "${SIG_CREDENTIALS_DEV:-}" ]; then
+              echo '::error::SIG_CREDENTIALS_DEV is required to read the treasury seed from Secret Manager'
+              exit 1
+            fi
+          elif [ -z "${MPC_MIDNIGHT_PINGER_SEED:-}" ]; then
+            echo '::error::MPC_MIDNIGHT_PINGER_SEED is required when Midnight funding is disabled'
+            exit 1
+          fi
+        env:
+          SIG_CREDENTIALS_DEV: ${{ secrets.SIG_CREDENTIALS_DEV }}
+
+      - name: Install pinned Compact compiler
+        run: node scripts/install-compact.mjs "$RUNNER_TEMP/compact"
+
+      # Deployment submits real proofs, so the proving keys are required here;
+      # `compile:midnight` alone (--skip-zk) produces bindings that cannot
+      # deploy. This is also the only place the full build is exercised — it
+      # cannot be run on an arm64 Mac at all.
+      - name: Compile Midnight caller with proving keys
+        env:
+          COMPACTC: ${{ runner.temp }}/compact/compactc
+        run: pnpm compile:midnight:zk
+
+      # near-dev-github holds secretAccessor on the treasury seed and nothing
+      # else. The ARC runner pods have no GCP identity of their own.
+      - name: Authenticate to Google Cloud
+        if: inputs.fund_midnight
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: '${{ secrets.SIG_CREDENTIALS_DEV }}'
+
+      # Read at run time so there is no second copy to keep level, and masked,
+      # which `gcloud ... >> GITHUB_ENV` is not.
+      - name: Read the Midnight treasury seed
+        id: treasury
+        if: inputs.fund_midnight
+        uses: google-github-actions/get-secretmanager-secrets@v2
+        with:
+          secrets: |-
+            funding_seed:near-cs-dev/multichain-midnight-funding-seed-dev
+
+      # The pinger wallet is a deterministic child of the treasury seed, so
+      # this job and the load test below derive the same wallet from the same
+      # secret without the seed ever becoming a job output.
+      #
+      # Deployment and initialisation both cost NIGHT and DUST, so the wallet
+      # is topped up before either. Idempotent: a wallet already at the target
+      # transfers nothing and only waits for DUST.
+      - name: Fund Midnight pinger wallet
+        if: inputs.fund_midnight
+        env:
+          MPC_MIDNIGHT_FUNDING_SEED: ${{ steps.treasury.outputs.funding_seed }}
+        run: |
+          set -euo pipefail
+          pnpm fund:midnight \
+            --target-night "${{ inputs.midnight_target_night }}" \
+            --max-transfer-night "${{ inputs.midnight_max_transfer_night }}" \
+            --reserve-night "${{ inputs.midnight_reserve_night }}" \
+            --minimum-dust "${{ inputs.midnight_minimum_dust }}" \
+            --execute
+
+      - name: Deploy or verify the Midnight caller
+        id: caller
+        env:
+          # Deliberately not inherited from the job: `deploy:midnight` refuses
+          # to deploy while a caller is configured, so the fresh path has to
+          # see this unset and the reuse path has to see it set.
+          CONFIGURED_CALLER: ${{ vars.MPC_MIDNIGHT_CALLER_ADDRESS }}
+        run: |
+          set -euo pipefail
+          if [ "${DEPLOY_CALLER}" = 'true' ] || [ -z "${CONFIGURED_CALLER:-}" ]; then
+            if [ -n "${CONFIGURED_CALLER:-}" ]; then
+              echo "::notice::Deploying a fresh caller; MPC_MIDNIGHT_CALLER_ADDRESS (${CONFIGURED_CALLER}) is ignored for this run."
+            fi
+            origin='deployed this run'
+            pnpm deploy:midnight
+            pnpm deploy:midnight --initialise
+          else
+            # Not a no-op: this joins the recorded caller, checks its
+            # destination chain and re-pins the response key, so a caller that
+            # was deployed but never initialised is finished here rather than
+            # failing the first round trip.
+            echo "Reusing configured Midnight caller ${CONFIGURED_CALLER}"
+            origin='reused'
+            MPC_MIDNIGHT_CALLER_ADDRESS="${CONFIGURED_CALLER}" pnpm deploy:midnight --initialise
+          fi
+          address=$(jq -er '.contractAddress' .midnight/deployment.json)
+          status=$(jq -er '.status' .midnight/deployment.json)
+          if [ "${status}" != 'initialised' ]; then
+            echo "::error::Caller ${address} is ${status}, not initialised"
+            exit 1
+          fi
+          echo "address=${address}" >> "${GITHUB_OUTPUT}"
+          echo "origin=${origin}" >> "${GITHUB_OUTPUT}"
+          echo "::notice::Midnight caller ${address} (${origin})"
+
   # Separate from the load test so the two hold different locks. This job takes
   # the scheduled sweep's concurrency group — both spend from the same wallet,
   # and two senders racing one nonce leaves a stuck transaction — while the load
   # test below runs outside it. Putting the group on the whole workflow instead
   # would block every scheduled sweep for the two hours a run can last.
   fund:
-    runs-on: ubuntu-latest
+    needs: caller
+    # `caller` is skipped entirely for Solana runs, which is not a failure.
+    if: ${{ !cancelled() && needs.caller.result != 'failure' }}
+    # This workflow needs the in-cluster proof server when testing Midnight.
+    # The ARC scale set provides the `midnight-proof-server.default` DNS path.
+    runs-on: arc-runner-set
     timeout-minutes: 15
     environment: Pinger Test ENV
     concurrency:
@@ -82,13 +289,20 @@ jobs:
       SIG_ETH_RPC_URL_SEPOLIA: ${{ secrets.SIG_ETH_RPC_URL_SEPOLIA }}
       SIG_SOL_RPC_URL_DEV: ${{ secrets.SIG_SOL_RPC_URL_DEV }}
       SIG_SOL_SK: ${{ secrets.SIG_SOL_SK }}
+      FUND_MIDNIGHT: ${{ inputs.fund_midnight }}
       SIG_BIDIRECTIONAL_FUNDING_SK: ${{ secrets.SIG_BIDIRECTIONAL_FUNDING_SK }}
       # The address set is a function of these four. They are repeated verbatim
       # on the load test job below, because funding a set the run does not use
       # is silent: the sweep reports success and every job still starves.
-      SIG_BIDIRECTIONAL_PATHS: ${{ inputs.paths }}
+      SIG_BIDIRECTIONAL_PATHS: ${{ inputs.source_chain == 'midnight' && '1' || inputs.paths }}
       SIG_BIDIRECTIONAL_PATH_PREFIX: ${{ vars.SIG_BIDIRECTIONAL_PATH_PREFIX }}
       SIG_SOL_ROOT_PUBLIC_KEY: ${{ vars.SIG_SOL_ROOT_PUBLIC_KEY }}
+      # From the caller job, not the repository variable: a fresh deployment
+      # derives a different worker, and topping up the old one would report
+      # success while the run starves.
+      MPC_MIDNIGHT_CALLER_ADDRESS: ${{ needs.caller.outputs.address }}
+      MPC_MIDNIGHT_ROOT_PUBLIC_KEY: ${{ vars.MPC_MIDNIGHT_ROOT_PUBLIC_KEY }}
+      MPC_MIDNIGHT_CENTRAL_ADDRESS: ${{ vars.MPC_MIDNIGHT_CENTRAL_ADDRESS }}
       # The floor of the band, and the same figure the load test job below
       # passes to the service. One variable, so there is no pair to keep level
       # and no gap for an address to be stranded in: too poor to lease, too
@@ -118,7 +332,7 @@ jobs:
       # is what lets every funding variable above pass through unset.
       - name: Resolve funding configuration
         id: config
-        run: pnpm fund:config >> "${GITHUB_OUTPUT}"
+        run: pnpm exec tsx scripts/fund-config.ts >> "${GITHUB_OUTPUT}"
 
       - name: Fund every address for the run about to be driven
         id: fund
@@ -161,7 +375,7 @@ jobs:
           prog='import sys; from decimal import Decimal as D; floor = D(sys.argv[1]) / D(10) ** 18; per_address = -(-int(sys.argv[2]) // int(sys.argv[3])); need = per_address * D(sys.argv[4]) * D(sys.argv[5]); print(max(floor + need, D(sys.argv[6])).quantize(D("1e-18")))'
           target=$(python3 -c "${prog}" "${FLOOR_WEI}" "${JOBS}" "${PATHS}" "${GAS_PER_RUN_ETH}" "${GAS_MARGIN}" "${BAND_TOPUP_ETH}")
           echo "Funding ${PATHS} address(es) to ${target} ETH for ${JOBS} job(s)."
-          if pnpm fund --env "${ENV}" --topup "${target}" 2>&1 | tee fund.log; then
+          if pnpm fund --source-chain "${SOURCE_CHAIN}" --env "${ENV}" --topup "${target}" 2>&1 | tee fund.log; then
             echo 'result=ok' >> "${GITHUB_OUTPUT}"
           else
             echo 'result=failed' >> "${GITHUB_OUTPUT}"
@@ -172,8 +386,9 @@ jobs:
           fi
         env:
           ENV: ${{ inputs.env }}
+          SOURCE_CHAIN: ${{ inputs.source_chain }}
           JOBS: ${{ inputs.jobs }}
-          PATHS: ${{ inputs.paths }}
+          PATHS: ${{ inputs.source_chain == 'midnight' && '1' || inputs.paths }}
           # Measured for eth_self_transfer. erc20_zero_transfer costs more, so
           # this is the floor of the two and the margin absorbs the difference;
           # re-measure and raise it if that stops being true.
@@ -185,8 +400,10 @@ jobs:
           GAS_MARGIN: ${{ steps.config.outputs.gas_margin }}
 
   loadtest:
-    needs: fund
-    runs-on: ubuntu-latest
+    needs: [caller, fund]
+    if: ${{ !cancelled() && needs.caller.result != 'failure' && needs.fund.result == 'success' }}
+    # GitHub-hosted runners cannot resolve Kubernetes service DNS names.
+    runs-on: arc-runner-set
     # Submission is bounded by the arrival-rate limit and the last job then
     # waits out Ethereum finality: roughly `jobs / rate` minutes plus forty.
     timeout-minutes: 120
@@ -199,12 +416,26 @@ jobs:
       SIG_ETH_RPC_URL_SEPOLIA: ${{ secrets.SIG_ETH_RPC_URL_SEPOLIA }}
       SIG_SOL_RPC_URL_DEV: ${{ secrets.SIG_SOL_RPC_URL_DEV }}
       SIG_SOL_SK: ${{ secrets.SIG_SOL_SK }}
+      SOURCE_CHAIN: ${{ inputs.source_chain }}
+      ENV: ${{ inputs.env }}
+      FUND_MIDNIGHT: ${{ inputs.fund_midnight }}
       # Verbatim from the fund job above: these four decide which addresses are
       # derived, and the two jobs have to land on the same set.
-      SIG_BIDIRECTIONAL_PATHS: ${{ inputs.paths }}
+      SIG_BIDIRECTIONAL_PATHS: ${{ inputs.source_chain == 'midnight' && '1' || inputs.paths }}
       SIG_BIDIRECTIONAL_PATH_PREFIX: ${{ vars.SIG_BIDIRECTIONAL_PATH_PREFIX }}
       SIG_SOL_ROOT_PUBLIC_KEY: ${{ vars.SIG_SOL_ROOT_PUBLIC_KEY }}
       SIG_BIDIRECTIONAL_MIN_BALANCE_WEI: ${{ vars.SIG_BIDIRECTIONAL_MIN_BALANCE_WEI }}
+      MPC_MIDNIGHT_NODE_URL: ${{ vars.MPC_MIDNIGHT_NODE_URL || 'https://rpc.stagenet.shielded.tools' }}
+      MPC_MIDNIGHT_INDEXER_URL: ${{ vars.MPC_MIDNIGHT_INDEXER_URL || 'https://indexer.stagenet.shielded.tools/api/v4/graphql' }}
+      MPC_MIDNIGHT_INDEXER_WS_URL: ${{ vars.MPC_MIDNIGHT_INDEXER_WS_URL || 'wss://indexer.stagenet.shielded.tools/api/v4/graphql/ws' }}
+      MPC_MIDNIGHT_PROOF_SERVER_URL: ${{ vars.MPC_MIDNIGHT_PROOF_SERVER_URL || 'http://midnight-proof-server.default:6300/' }}
+      MPC_MIDNIGHT_CENTRAL_ADDRESS: ${{ vars.MPC_MIDNIGHT_CENTRAL_ADDRESS || '1df4ce25fc9f9c03dc6f4d0eb12ddf3d0db094995d4c70aca1142eebb3b77a5d' }}
+      # The caller the `caller` job deployed or verified. The service also
+      # falls back to .midnight/deployment.json, but that file lives on the
+      # other runner, so this is the only link between the two jobs.
+      MPC_MIDNIGHT_CALLER_ADDRESS: ${{ needs.caller.outputs.address }}
+      MPC_MIDNIGHT_ROOT_PUBLIC_KEY: ${{ vars.MPC_MIDNIGHT_ROOT_PUBLIC_KEY }}
+      MPC_MIDNIGHT_PINGER_SEED: ${{ secrets.MPC_MIDNIGHT_PINGER_SEED }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -219,15 +450,87 @@ jobs:
       - name: Validate required secrets
         run: |
           set -euo pipefail
-          for name in SIG_ETH_RPC_URL_SEPOLIA SIG_SOL_RPC_URL_DEV SIG_SOL_SK; do
+          case "${SOURCE_CHAIN}:${ENV}" in
+            midnight:stagenet|solana:dev|solana:testnet) ;;
+            *)
+              echo "::error::Unsupported source/environment combination: ${SOURCE_CHAIN}/${ENV}"
+              echo '::error::Use midnight with stagenet, or solana with dev/testnet.'
+              exit 1
+              ;;
+          esac
+          for name in SIG_ETH_RPC_URL_SEPOLIA; do
             if [ -z "${!name:-}" ]; then
               echo "::error::Missing required secret: ${name}"
               exit 1
             fi
           done
+          if [ "${SOURCE_CHAIN}" = midnight ]; then
+            for name in MPC_MIDNIGHT_NODE_URL MPC_MIDNIGHT_INDEXER_URL MPC_MIDNIGHT_PROOF_SERVER_URL MPC_MIDNIGHT_CENTRAL_ADDRESS; do
+              if [ -z "${!name:-}" ]; then
+                echo "::error::Missing Midnight configuration: ${name}"
+                exit 1
+              fi
+            done
+            if [ "${FUND_MIDNIGHT}" = 'true' ]; then
+              if [ -z "${SIG_CREDENTIALS_DEV:-}" ]; then
+                echo '::error::SIG_CREDENTIALS_DEV is required to read the treasury seed from Secret Manager'
+                exit 1
+              fi
+            elif [ -z "${MPC_MIDNIGHT_PINGER_SEED:-}" ]; then
+              echo '::error::MPC_MIDNIGHT_PINGER_SEED is required when Midnight funding is disabled'
+              exit 1
+            fi
+          else
+            for name in SIG_SOL_RPC_URL_DEV SIG_SOL_SK; do
+              if [ -z "${!name:-}" ]; then
+                echo "::error::Missing Solana secret: ${name}"
+                exit 1
+              fi
+            done
+          fi
+        env:
+          SIG_CREDENTIALS_DEV: ${{ secrets.SIG_CREDENTIALS_DEV }}
+
+      - name: Install pinned Compact compiler
+        run: node scripts/install-compact.mjs "$RUNNER_TEMP/compact"
+
+      - name: Compile Midnight caller bindings
+        env:
+          COMPACTC: ${{ runner.temp }}/compact/compactc
+        run: pnpm compile:midnight:zk
 
       - name: Build
         run: pnpm build
+
+      - name: Authenticate to Google Cloud
+        if: inputs.source_chain == 'midnight' && inputs.fund_midnight
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: '${{ secrets.SIG_CREDENTIALS_DEV }}'
+
+      - name: Read the Midnight treasury seed
+        id: treasury
+        if: inputs.source_chain == 'midnight' && inputs.fund_midnight
+        uses: google-github-actions/get-secretmanager-secrets@v2
+        with:
+          secrets: |-
+            funding_seed:near-cs-dev/multichain-midnight-funding-seed-dev
+
+      # Re-derives the same pinger wallet the caller job used, which is how
+      # this runner gets .midnight/pinger.env without the seed crossing
+      # between jobs. Idempotent: at target it transfers nothing.
+      - name: Fund Midnight pinger wallet
+        if: inputs.source_chain == 'midnight' && inputs.fund_midnight
+        env:
+          MPC_MIDNIGHT_FUNDING_SEED: ${{ steps.treasury.outputs.funding_seed }}
+        run: |
+          set -euo pipefail
+          pnpm fund:midnight \
+            --target-night "${{ inputs.midnight_target_night }}" \
+            --max-transfer-night "${{ inputs.midnight_max_transfer_night }}" \
+            --reserve-night "${{ inputs.midnight_reserve_night }}" \
+            --minimum-dust "${{ inputs.midnight_minimum_dust }}" \
+            --execute
 
       - name: Start the pinger
         run: |
@@ -258,7 +561,7 @@ jobs:
           set -euo pipefail
           curl -sS --fail-with-body \
             -H "x-api-secret: ${API_SECRET}" \
-            "http://localhost:${PORT}/sign_bidirectional/workers?env=${ENV}" \
+            "http://localhost:${PORT}/sign_bidirectional/workers?env=${ENV}&sourceChain=${SOURCE_CHAIN}" \
             | tee workers.json \
             | jq -r '.workers[] | "  \(.path)  \(.address)  \(.balanceWei) wei\(if .underfunded then "  UNDERFUNDED" else "" end)"'
 
@@ -282,6 +585,7 @@ jobs:
           fi
         env:
           ENV: ${{ inputs.env }}
+          SOURCE_CHAIN: ${{ inputs.source_chain }}
           FUND_RESULT: ${{ needs.fund.outputs.result }}
 
       # The driver exits non-zero if any job failed, so a single MPC timeout in
@@ -294,6 +598,7 @@ jobs:
           pnpm loadtest \
             --jobs "${{ inputs.jobs }}" \
             --env "${{ inputs.env }}" \
+            --source-chain "${{ inputs.source_chain }}" \
             --mode "${{ inputs.mode }}" \
             --url "http://localhost:${PORT}" \
             | tee loadtest.log
@@ -309,12 +614,16 @@ jobs:
         if: always()
         run: |
           {
-            echo "## Solana Bidirectional (ad hoc)"
+            echo "## Bidirectional (ad hoc)"
             echo
+            echo "- Source chain: \`${{ inputs.source_chain }}\`"
             echo "- Network: \`${{ inputs.env }}\`"
             echo "- Mode: \`${{ inputs.mode }}\`"
-            echo "- Jobs: \`${{ inputs.jobs }}\` across \`${{ inputs.paths }}\` addresses"
+            echo "- Jobs: \`${{ inputs.jobs }}\` across \`${{ inputs.source_chain == 'midnight' && '1' || inputs.paths }}\` addresses"
             echo "- Top-up: \`${{ needs.fund.outputs.result }}\`"
+            if [ -n "${MPC_MIDNIGHT_CALLER_ADDRESS:-}" ]; then
+              echo "- Midnight caller: \`${MPC_MIDNIGHT_CALLER_ADDRESS}\` (${{ needs.caller.outputs.origin }})"
+            fi
             echo
             if [ -f loadtest.log ]; then
               echo '```'

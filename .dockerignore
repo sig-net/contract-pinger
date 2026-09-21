@@ -1,3 +1,10 @@
-/node_modules
+node_modules/
+.git
 .env
-.env.example
+.env.*
+dist/
+coverage/
+.midnight/
+contracts/midnight/managed/
+contracts/midnight/SignetSigner
+*.log

@@ -1,44 +1,30 @@
-/**
- * Load driver for POST /sign_bidirectional.
- *
- * Submits N jobs against a running pinger, respecting the server's own rate
- * limit, then polls every job to completion and reports what happened.
- *
- *   pnpm loadtest --jobs 50
- *   pnpm loadtest --jobs 20 --mode erc20_zero_transfer --env testnet
- *
- * Reads API_SECRET from the environment; it is never taken as an argument.
- *
- * Submission and completion are deliberately separate phases in the output:
- * jobs are accepted in seconds but settle over tens of minutes, so a summary
- * that only appeared at the end would look like a hang.
- */
+/** Submit jobs, then poll and report. API_SECRET is read only from the environment. */
 import 'dotenv/config';
 
 import { env } from '../src/utils/env';
+import type { JobView } from '../src/jobs/store';
+import type { buildStats } from '../src/jobs/stats';
 
-interface Options {
-  jobs: number;
-  env: string;
-  mode: string;
-  url: string;
-  secret: string;
-  pollMs: number;
-}
+type ReportJob = Pick<JobView, 'state' | 'error'> & {
+  durations?: JobView['durations'];
+  failureReason?: JobView['failureReason'] | 'lost_by_server';
+};
 
-const parseArgs = (argv: string[]): Options => {
+const parseArgs = (argv: string[]) => {
   const get = (name: string, fallback: string): string => {
     const index = argv.indexOf(`--${name}`);
     return index >= 0 && argv[index + 1] ? argv[index + 1] : fallback;
   };
+  const sourceChain = get('source-chain', 'solana');
   return {
     jobs: Number(get('jobs', '10')),
-    env: get('env', env.bidirectional.e2eEnv),
+    sourceChain,
+    env: get(
+      'env',
+      sourceChain === 'midnight' ? 'stagenet' : env.bidirectional.e2eEnv
+    ),
     mode: get('mode', env.bidirectional.txMode),
     url: get('url', `http://localhost:${env.port}`),
-    // Environment only. A secret passed as an argument is visible in `ps`
-    // output and lands in shell history. Checked below, since the driver
-    // cannot reach any endpoint without it.
     secret: env.apiSecret ?? '',
     pollMs: Number(get('poll', '15000')),
   };
@@ -78,56 +64,64 @@ const main = async () => {
   const started = Date.now();
 
   console.log(
-    `Driving ${opts.jobs} × ${opts.mode} against ${opts.url} (${opts.env})\n`
+    `Driving ${opts.jobs} × ${opts.mode} against ${opts.url} (${opts.sourceChain}/${opts.env})\n`
   );
 
-  // --- Submit -------------------------------------------------------------
-  // A 429 from the rate limiter is expected, not an error: the server caps
-  // arrivals per minute and tells us exactly how long to wait.
   const jobIds: string[] = [];
   let rateLimited = 0;
+  let submissionFailed = false;
 
-  while (jobIds.length < opts.jobs) {
-    const res = await fetch(`${opts.url}/sign_bidirectional`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ env: opts.env, mode: opts.mode }),
-    });
+  try {
+    while (jobIds.length < opts.jobs) {
+      const res = await fetch(`${opts.url}/sign_bidirectional`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          env: opts.env,
+          mode: opts.mode,
+          sourceChain: opts.sourceChain,
+        }),
+      });
 
-    if (res.status === 429) {
-      const body = await res.json();
-      const waitMs = body.retryAfterMs ?? 5_000;
-      rateLimited += 1;
-      process.stdout.write(
-        `\r[${clock(started)}] submitted ${jobIds.length}/${opts.jobs} — ` +
-          `rate limited, waiting ${Math.ceil(waitMs / 1000)}s   `
+      if (res.status === 429) {
+        const body: { retryAfterMs?: number } = await res.json();
+        const waitMs = body.retryAfterMs ?? 5_000;
+        rateLimited += 1;
+        process.stdout.write(
+          `\r[${clock(started)}] submitted ${jobIds.length}/${opts.jobs} — ` +
+            `rate limited, waiting ${Math.ceil(waitMs / 1000)}s   `
+        );
+        await sleep(waitMs + 250);
+        continue;
+      }
+
+      if (res.status !== 202) {
+        console.error(`\nSubmit failed (${res.status}):`, await res.text());
+        submissionFailed = true;
+        break;
+      }
+
+      const { jobId }: { jobId: string } = await res.json();
+      jobIds.push(jobId);
+      console.log(
+        `[${clock(started)}] accepted ${jobId} (${jobIds.length}/${opts.jobs})`
       );
-      await sleep(waitMs + 250);
-      continue;
     }
-
-    if (res.status !== 202) {
-      console.error(`\nSubmit failed (${res.status}):`, await res.text());
-      process.exit(1);
-    }
-
-    jobIds.push((await res.json()).jobId);
-    process.stdout.write(
-      `\r[${clock(started)}] submitted ${jobIds.length}/${opts.jobs}            `
-    );
+  } catch (error) {
+    // A lost POST response may hide an accepted job; never submit it again.
+    console.error('\nSubmit failed:', error);
+    submissionFailed = true;
   }
+  if (submissionFailed && jobIds.length === 0) process.exit(1);
 
   console.log(
-    `\n\nAll ${jobIds.length} submitted in ${clock(started)}` +
+    `\n\n${submissionFailed ? `Stopped after ${jobIds.length}/${opts.jobs} submissions` : `All ${jobIds.length} submitted`} in ${clock(started)}` +
       (rateLimited > 0 ? ` (${rateLimited} rate-limit waits)` : '') +
       '\nPolling to completion — the respond leg waits for Ethereum finality.\n'
   );
 
-  // --- Poll ---------------------------------------------------------------
-  const finished = new Map<string, any>();
-  // A job the server no longer knows about — the store is in memory, so a
-  // restart or a prune loses it — would otherwise be polled forever, since
-  // completion is the only exit condition.
+  const finished = new Map<string, ReportJob>();
+  // Bound consecutive unsuccessful polls when the in-memory server loses a job.
   const missing = new Map<string, number>();
   const MAX_MISSES = 5;
 
@@ -136,32 +130,29 @@ const main = async () => {
 
     const states: Record<string, number> = {};
     for (const id of jobIds) {
-      if (finished.has(id)) {
-        states[finished.get(id).state] =
-          (states[finished.get(id).state] ?? 0) + 1;
-        continue;
-      }
-      const res = await fetch(`${opts.url}/sign_bidirectional/${id}`, {
-        headers,
-      });
-      if (!res.ok) {
-        const misses = (missing.get(id) ?? 0) + 1;
-        missing.set(id, misses);
-        if (misses >= MAX_MISSES) {
-          finished.set(id, {
-            state: 'failed',
-            failureReason: 'lost_by_server',
-            error: `Job not found after ${MAX_MISSES} polls (server restarted, or the record was pruned)`,
-          });
+      let job = finished.get(id);
+      if (!job) {
+        const res = await fetch(`${opts.url}/sign_bidirectional/${id}`, {
+          headers,
+        });
+        if (!res.ok) {
+          const misses = (missing.get(id) ?? 0) + 1;
+          missing.set(id, misses);
+          if (misses >= MAX_MISSES) {
+            finished.set(id, {
+              state: 'failed',
+              failureReason: 'lost_by_server',
+              error: `Job not found after ${MAX_MISSES} polls (server restarted, or the record was pruned)`,
+            });
+          }
+          continue;
         }
-        continue;
+        missing.delete(id);
+        job = (await res.json()) as JobView;
+        if (job.state === 'responded' || job.state === 'failed')
+          finished.set(id, job);
       }
-      missing.delete(id);
-      const job = await res.json();
       states[job.state] = (states[job.state] ?? 0) + 1;
-      if (job.state === 'responded' || job.state === 'failed') {
-        finished.set(id, job);
-      }
     }
 
     const summary = Object.entries(states)
@@ -171,7 +162,6 @@ const main = async () => {
     console.log(`[${clock(started)}] ${summary}`);
   }
 
-  // --- Report -------------------------------------------------------------
   const jobs = [...finished.values()];
   const ok = jobs.filter(j => j.state === 'responded');
   const bad = jobs.filter(j => j.state === 'failed');
@@ -184,8 +174,8 @@ const main = async () => {
   if (bad.length > 0) {
     const reasons: Record<string, number> = {};
     for (const job of bad) {
-      reasons[job.failureReason ?? 'unknown'] =
-        (reasons[job.failureReason ?? 'unknown'] ?? 0) + 1;
+      const reason = job.failureReason ?? 'unknown';
+      reasons[reason] = (reasons[reason] ?? 0) + 1;
     }
     console.log('\nFailures:');
     for (const [reason, count] of Object.entries(reasons).sort(
@@ -197,9 +187,6 @@ const main = async () => {
     }
   }
 
-  // Reported separately because they measure different things: waiting for a
-  // free address, the MPC signing, Ethereum mining, and the MPC reading the
-  // result back after finality.
   const metrics: [string, string][] = [
     ['lease wait', 'leaseWaitMs'],
     ['signature', 'signatureMs'],
@@ -214,27 +201,30 @@ const main = async () => {
     const values = ok
       .map(j => j.durations?.[key])
       .filter((v): v is number => typeof v === 'number');
-    console.log(
-      `  ${label.padEnd(14)} ${fmt(values.length ? Math.min(...values) : null).padStart(8)}  ` +
-        `${fmt(percentile(values, 50)).padStart(8)}  ` +
-        `${fmt(percentile(values, 95)).padStart(8)}  ` +
-        `${fmt(values.length ? Math.max(...values) : null).padStart(8)}`
-    );
+    const columns = [
+      values.length ? Math.min(...values) : null,
+      percentile(values, 50),
+      percentile(values, 95),
+      values.length ? Math.max(...values) : null,
+    ]
+      .map(value => fmt(value).padStart(8))
+      .join('  ');
+    console.log(`  ${label.padEnd(14)} ${columns}`);
   }
 
   const stats = await fetch(
-    `${opts.url}/sign_bidirectional/stats?env=${opts.env}`,
+    `${opts.url}/sign_bidirectional/stats?env=${encodeURIComponent(opts.env)}&sourceChain=${encodeURIComponent(opts.sourceChain)}`,
     { headers }
   );
   if (stats.ok) {
-    const body = await stats.json();
+    const body: ReturnType<typeof buildStats> = await stats.json();
     console.log(
       `\nPool: ${body.pool.busy}/${body.pool.size} busy, ` +
         `${body.pool.underfunded} underfunded`
     );
   }
 
-  process.exit(bad.length > 0 ? 1 : 0);
+  process.exit(submissionFailed || bad.length > 0 ? 1 : 0);
 };
 
 main().catch(error => {

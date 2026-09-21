@@ -9,8 +9,8 @@ import { env } from './env';
  * cluster and an Ethereum together, so two lists of the same names would drift
  * the moment one gained a network.
  */
-export type { BidirectionalEnvironment as SolanaEnvironment } from './bidirectionalTx';
-type SolanaEnvironment = BidirectionalEnvironment;
+
+export type SolanaEnvironment = Exclude<BidirectionalEnvironment, 'stagenet'>;
 
 const resolveConfig = (environment: SolanaEnvironment) => {
   const { solRpcUrlDevnet, solRpcUrlMainnet, solSk } = env;
