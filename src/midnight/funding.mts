@@ -56,20 +56,55 @@ export function parseFundingArgs(
   return { ...limits, execute };
 }
 
-/** NIGHT fees are paid separately in DUST by the SDK transfer balancer. */
-export function planNightTransfer(
+/**
+ * What the recipient is short of its target, before the treasury is consulted.
+ *
+ * Separate from the plan because the treasury balance is only ever read to
+ * guard the reserve: a caller that learns nothing is due can skip syncing the
+ * treasury wallet at all, which on a cold runner is a full chain scan.
+ */
+export function nightShortfall(
   currentNight: bigint,
-  treasuryNight: bigint,
   limits: FundingLimits
 ): bigint {
-  if (currentNight < 0n || treasuryNight < 0n)
-    throw new FundingError('Negative account balance');
-  const amount =
-    currentNight < limits.targetNight ? limits.targetNight - currentNight : 0n;
+  if (currentNight < 0n) throw new FundingError('Negative account balance');
+  return currentNight < limits.targetNight
+    ? limits.targetNight - currentNight
+    : 0n;
+}
+
+/**
+ * NIGHT fees are paid separately in DUST by the SDK transfer balancer.
+ *
+ * `treasuryNight` may be omitted when the caller has not read the treasury;
+ * that is only valid while nothing is due, and is refused otherwise.
+ */
+export function planNightTransfer(
+  currentNight: bigint,
+  treasuryNight: bigint | undefined,
+  limits: FundingLimits
+): bigint {
+  const amount = nightShortfall(currentNight, limits);
   if (amount > limits.maxTransferNight)
-    throw new FundingError('NIGHT top-up exceeds the transfer cap');
-  if (amount > 0n && treasuryNight < amount + limits.reserveNight) {
-    throw new FundingError('NIGHT top-up would consume the treasury reserve');
+    throw new FundingError(
+      `NIGHT top-up exceeds the transfer cap: ${amount} needed, cap is ${limits.maxTransferNight}`
+    );
+  if (amount === 0n) return amount;
+  // Only reached when a transfer is actually due, so the treasury must have
+  // been read by now.
+  if (treasuryNight === undefined)
+    throw new FundingError(
+      'The treasury balance is required to plan a NIGHT transfer'
+    );
+  if (treasuryNight < 0n) throw new FundingError('Negative account balance');
+  if (treasuryNight < amount + limits.reserveNight) {
+    // The figures, not just the verdict: this is reached after minutes of
+    // wallet syncing, and a bare refusal costs another full run to diagnose.
+    throw new FundingError(
+      `NIGHT top-up would consume the treasury reserve: transferring ${amount} ` +
+        `and keeping ${limits.reserveNight} in reserve needs ${amount + limits.reserveNight}, ` +
+        `but the treasury holds ${treasuryNight}`
+    );
   }
   return amount;
 }

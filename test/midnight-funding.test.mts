@@ -11,6 +11,7 @@ import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fundMidnight } from '../scripts/fund-midnight.mjs';
 import {
+  nightShortfall,
   parseFundingArgs,
   pingerSeedFile,
   planNightTransfer,
@@ -105,6 +106,29 @@ describe('Midnight funding limits', () => {
   it('does not transfer from an unfunded treasury when the target is already met', () => {
     expect(planNightTransfer(100n, 0n, limits)).toBe(0n);
     expect(planNightTransfer(101n, 0n, limits)).toBe(0n);
+  });
+  it('measures the shortfall without consulting the treasury', () => {
+    expect(nightShortfall(70n, limits)).toBe(30n);
+    expect(nightShortfall(100n, limits)).toBe(0n);
+    expect(nightShortfall(101n, limits)).toBe(0n);
+    expect(() => nightShortfall(-1n, limits)).toThrow(/Negative/);
+  });
+  it('plans an unnecessary transfer without a treasury balance', () => {
+    // What lets the caller skip syncing the treasury wallet entirely.
+    expect(planNightTransfer(100n, undefined, limits)).toBe(0n);
+    expect(() => planNightTransfer(70n, undefined, limits)).toThrow(
+      /treasury balance is required/i
+    );
+  });
+  it('names the figures when the reserve blocks a transfer', () => {
+    // The refusal follows minutes of wallet syncing, so it has to carry
+    // enough to act on without a second run.
+    expect(() => planNightTransfer(70n, 49n, limits)).toThrow(
+      /transferring 30 .*reserve.* needs 50.*holds 49/s
+    );
+    expect(() => planNightTransfer(49n, 1000n, limits)).toThrow(
+      /51 needed, cap is 50/
+    );
   });
 });
 

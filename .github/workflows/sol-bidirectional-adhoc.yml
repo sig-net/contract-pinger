@@ -83,20 +83,26 @@ on:
         required: false
         default: false
         type: boolean
+      # Sized to the stagenet treasury as measured on 2026-09-21: it held
+      # 15983028000, so the original 50000000000 target could never be met and
+      # every run died on the reserve guard after five minutes of syncing.
+      # Raise these only alongside a treasury top-up.
       midnight_target_night:
         description: Midnight pinger NIGHT target in base units
         required: false
-        default: '50000000000'
+        default: '10000000000'
         type: string
       midnight_max_transfer_night:
         description: Midnight per-run NIGHT transfer cap in base units
         required: false
-        default: '50000000000'
+        default: '10000000000'
         type: string
+      # Non-zero so a run cannot empty the treasury outright; the sweep needs
+      # something left to pay its own DUST fees with.
       midnight_reserve_night:
         description: Midnight treasury NIGHT reserve in base units
         required: false
-        default: '0'
+        default: '2000000000'
         type: string
       midnight_minimum_dust:
         description: Minimum DUST to wait for, in base units

@@ -6,6 +6,7 @@ import { constants } from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import {
   FundingError,
+  nightShortfall,
   parseFundingArgs,
   pingerSeedFile,
   planNightTransfer,
@@ -65,8 +66,16 @@ export async function fundMidnight(
   let submitted = false;
   try {
     let child = await readAccountFunding(wallets, seed, 'pinger');
-    let treasury = await readAccountFunding(wallets, fundingSeed, 'treasury');
-    let amount = planNightTransfer(child.night, treasury.night, limits);
+    // Syncing a wallet is a full chain scan on a cold runner, and the treasury
+    // balance is only consulted to guard the reserve. Nothing due, nothing to
+    // read.
+    const due = nightShortfall(child.night, limits);
+    let treasury =
+      due > 0n
+        ? await readAccountFunding(wallets, fundingSeed, 'treasury')
+        : undefined;
+    // Reported before the plan is validated, so a refusal arrives with the
+    // balances that caused it rather than needing a second run to discover.
     console.log(
       JSON.stringify(
         {
@@ -75,8 +84,9 @@ export async function fundMidnight(
           recipient: child.addresses.unshielded,
           currentNight: child.night.toString(),
           targetNight: limits.targetNight.toString(),
-          transferNight: amount.toString(),
-          treasuryNight: treasury.night.toString(),
+          transferNight: due.toString(),
+          treasuryNight:
+            treasury?.night.toString() ?? 'not read: no transfer is due',
           reserveNight: limits.reserveNight.toString(),
           currentDust: child.dust.toString(),
           minimumDust: limits.minimumDust.toString(),
@@ -85,6 +95,7 @@ export async function fundMidnight(
         2
       )
     );
+    let amount = planNightTransfer(child.night, treasury?.night, limits);
     if (!limits.execute) return;
     await pingerSeedFile(seedFile, seed, true);
     if (amount > 0n) {
