@@ -260,7 +260,7 @@ jobs:
             fi
           done
           if [ "${SOURCE_CHAIN}" = midnight ]; then
-            for name in MPC_MIDNIGHT_NODE_URL MPC_MIDNIGHT_INDEXER_URL MPC_MIDNIGHT_PROOF_SERVER_URL MPC_MIDNIGHT_CENTRAL_ADDRESS MPC_MIDNIGHT_CALLER_ADDRESS MPC_MIDNIGHT_PINGER_SEED; do
+            for name in MPC_MIDNIGHT_NODE_URL MPC_MIDNIGHT_INDEXER_URL MPC_MIDNIGHT_PROOF_SERVER_URL MPC_MIDNIGHT_CENTRAL_ADDRESS MPC_MIDNIGHT_PINGER_SEED; do
               if [ -z "${!name:-}" ]; then
                 echo "::error::Missing Midnight configuration: ${name}"
                 exit 1
@@ -281,10 +281,27 @@ jobs:
       - name: Compile Midnight caller bindings
         env:
           COMPACTC: ${{ runner.temp }}/compact/compactc
-        run: pnpm compile:midnight
+        run: pnpm compile:midnight:zk
 
       - name: Build
         run: pnpm build
+
+      - name: Deploy and initialize Midnight caller
+        if: inputs.source_chain == 'midnight'
+        id: midnight-caller
+        run: |
+          set -euo pipefail
+          if [ -n "${MPC_MIDNIGHT_CALLER_ADDRESS:-}" ]; then
+            echo "Using configured Midnight caller ${MPC_MIDNIGHT_CALLER_ADDRESS}"
+            pnpm deploy:midnight --initialise
+          else
+            pnpm deploy:midnight
+            pnpm deploy:midnight --initialise
+          fi
+          caller=$(jq -er '.contractAddress' .midnight/deployment.json)
+          echo "MPC_MIDNIGHT_CALLER_ADDRESS=${caller}" >> "${GITHUB_ENV}"
+          echo "caller_address=${caller}" >> "${GITHUB_OUTPUT}"
+          echo "Using Midnight caller ${caller}"
 
       - name: Start the pinger
         run: |
