@@ -79,7 +79,9 @@ jobs:
   # test below runs outside it. Putting the group on the whole workflow instead
   # would block every scheduled sweep for the two hours a run can last.
   fund:
-    runs-on: ubuntu-latest
+    # This workflow needs the in-cluster proof server when testing Midnight.
+    # The ARC scale set provides the `midnight-proof-server.default` DNS path.
+    runs-on: arc-runner-set
     timeout-minutes: 15
     environment: Pinger Test ENV
     concurrency:
@@ -199,7 +201,8 @@ jobs:
 
   loadtest:
     needs: fund
-    runs-on: ubuntu-latest
+    # GitHub-hosted runners cannot resolve Kubernetes service DNS names.
+    runs-on: arc-runner-set
     # Submission is bounded by the arrival-rate limit and the last job then
     # waits out Ethereum finality: roughly `jobs / rate` minutes plus forty.
     timeout-minutes: 120
@@ -220,11 +223,11 @@ jobs:
       SIG_BIDIRECTIONAL_PATH_PREFIX: ${{ vars.SIG_BIDIRECTIONAL_PATH_PREFIX }}
       SIG_SOL_ROOT_PUBLIC_KEY: ${{ vars.SIG_SOL_ROOT_PUBLIC_KEY }}
       SIG_BIDIRECTIONAL_MIN_BALANCE_WEI: ${{ vars.SIG_BIDIRECTIONAL_MIN_BALANCE_WEI }}
-      MPC_MIDNIGHT_NODE_URL: ${{ vars.MPC_MIDNIGHT_NODE_URL }}
-      MPC_MIDNIGHT_INDEXER_URL: ${{ vars.MPC_MIDNIGHT_INDEXER_URL }}
-      MPC_MIDNIGHT_INDEXER_WS_URL: ${{ vars.MPC_MIDNIGHT_INDEXER_WS_URL }}
-      MPC_MIDNIGHT_PROOF_SERVER_URL: ${{ vars.MPC_MIDNIGHT_PROOF_SERVER_URL }}
-      MPC_MIDNIGHT_CENTRAL_ADDRESS: ${{ vars.MPC_MIDNIGHT_CENTRAL_ADDRESS }}
+      MPC_MIDNIGHT_NODE_URL: ${{ vars.MPC_MIDNIGHT_NODE_URL || 'https://rpc.stagenet.shielded.tools' }}
+      MPC_MIDNIGHT_INDEXER_URL: ${{ vars.MPC_MIDNIGHT_INDEXER_URL || 'https://indexer.stagenet.shielded.tools/api/v4/graphql' }}
+      MPC_MIDNIGHT_INDEXER_WS_URL: ${{ vars.MPC_MIDNIGHT_INDEXER_WS_URL || 'wss://indexer.stagenet.shielded.tools/api/v4/graphql/ws' }}
+      MPC_MIDNIGHT_PROOF_SERVER_URL: ${{ vars.MPC_MIDNIGHT_PROOF_SERVER_URL || 'http://midnight-proof-server.default:6300/' }}
+      MPC_MIDNIGHT_CENTRAL_ADDRESS: ${{ vars.MPC_MIDNIGHT_CENTRAL_ADDRESS || '1df4ce25fc9f9c03dc6f4d0eb12ddf3d0db094995d4c70aca1142eebb3b77a5d' }}
       MPC_MIDNIGHT_CALLER_ADDRESS: ${{ vars.MPC_MIDNIGHT_CALLER_ADDRESS }}
       MPC_MIDNIGHT_ROOT_PUBLIC_KEY: ${{ vars.MPC_MIDNIGHT_ROOT_PUBLIC_KEY }}
       MPC_MIDNIGHT_PINGER_SEED: ${{ secrets.MPC_MIDNIGHT_PINGER_SEED }}
